@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="repository.mang.pakundo.addons" name="mang.pakundo Add-ons" version="0.0.9" provider-name="mang.pakundo">
+<addon id="repository.mang.pakundo.addons" name="mang.pakundo Add-ons" version="0.0.10" provider-name="mang.pakundo">
     <extension point="xbmc.addon.repository" name="mang.pakundo Add-ons">
         <info compressed="false">https://github.com/mang-pakundo/mang-pakundo-tv/raw/master/addons.xml</info>
         <checksum>https://github.com/mang-pakundo/mang-pakundo-tv/raw/master/addons.xml.md5</checksum>
-        <datadir zip="true">https://github.com/mang-pakundo/mang-pakundo-tv/raw/master/downloads</datadir>
+        <datadir zip="true">https://github.com/mang-pakundo/mang-pakundo-tv-releases/raw/master/downloads</datadir>
     </extension>
     <extension point="xbmc.addon.metadata">
         <summary>XBMC Plugins</summary>
