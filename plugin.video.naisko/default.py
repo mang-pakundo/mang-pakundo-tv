@@ -140,8 +140,10 @@ def get_recents():
         for s in g['genreRecent']]
     sub_recents.extend(sub_genres)
 
-    for r in sub_recents:
-        add_dir(r['recentTitle'], r['recentId'], mode_play_live if r['recentContentType'] == 'live' else mode_play)
+    recents = {v['recentId']: v for v in sub_recents}.values()
+    recents = sorted(recents, key = lambda k: k['recentTitle'])
+    for r in recents:
+        add_dir(r['recentTitle'], r['recentId'], mode_play_live if r['recentContentType'] == 'live' else mode_play, is_folder = False, list_properties = {'isPlayable': 'true'})
     xbmcplugin.endOfDirectory(this_plugin)
     
 
@@ -188,13 +190,15 @@ def get_episodes():
 
 def get_show_player():
     url = build_url('/getShowPlayer', params = {'access_token': get_access_token(), 'episodeID': id})
+    xbmc.log('---------------------------------- %s' % url, level=xbmc.LOGERROR)
     return get_json_response(url)
 
 
 def play_episode():
     x_forwarded_for = this_addon.getSetting('xForwardedForIp')
     show_player = get_show_player()
-    video_url = show_player['episodeVideo']
+    video_url = show_player['episodeVideo'] or show_player['mpegDash'] or show_player['hls'] or show_player['smoothStreaming'] or show_player['stbVideo'] or show_player['videoHDS']
+    xbmc.log('---------------------------------- video_url: %s' % video_url, level=xbmc.LOGERROR)
     video_url = '{video_url}|X-Forwarded-For={x_forwarded_for}&User-Agent={user_agent}'.format(video_url = video_url, x_forwarded_for = x_forwarded_for, user_agent = user_agent)
     liz = xbmcgui.ListItem(name)
     liz.setInfo(type="Video", infoLabels={"Title": name})
