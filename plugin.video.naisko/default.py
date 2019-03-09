@@ -151,7 +151,7 @@ def get_pages():
     headers = get_headers()
     add_dir('Latest', recent_id, mode_recent)
     for h in headers:
-        add_dir(h['name'], h['id'], mode_genre)
+        add_dir(h['name'].title(), h['id'], mode_genre)
     xbmcplugin.endOfDirectory(this_plugin)
 
 def get_genres():
@@ -190,7 +190,6 @@ def get_episodes():
 
 def get_show_player():
     url = build_url('/getShowPlayer', params = {'access_token': get_access_token(), 'episodeID': id})
-    xbmc.log('---------------------------------- %s' % url, level=xbmc.LOGERROR)
     return get_json_response(url)
 
 
@@ -198,7 +197,6 @@ def play_episode():
     x_forwarded_for = this_addon.getSetting('xForwardedForIp')
     show_player = get_show_player()
     video_url = show_player['episodeVideo'] or show_player['mpegDash'] or show_player['hls'] or show_player['smoothStreaming'] or show_player['stbVideo'] or show_player['videoHDS']
-    xbmc.log('---------------------------------- video_url: %s' % video_url, level=xbmc.LOGERROR)
     video_url = '{video_url}|X-Forwarded-For={x_forwarded_for}&User-Agent={user_agent}'.format(video_url = video_url, x_forwarded_for = x_forwarded_for, user_agent = user_agent)
     liz = xbmcgui.ListItem(name)
     liz.setInfo(type="Video", infoLabels={"Title": name})
