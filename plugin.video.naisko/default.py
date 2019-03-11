@@ -19,9 +19,7 @@ user_agent = 'okhttp/3.11.0'
 base_url = 'https://bff-prod.iwant.ph/api/OneCms/cmsapi/OTT'
 this_plugin = int(sys.argv[1])
 this_addon = xbmcaddon.Addon()
-init_file = os.path.join(xbmc.translatePath(this_addon.getAddonInfo('profile')), 'init.dat')
-header_file = os.path.join(xbmc.translatePath(this_addon.getAddonInfo('profile')), 'header.dat')
-sso_file = os.path.join(xbmc.translatePath(this_addon.getAddonInfo('profile')), 'sso.dat')
+cache_dir = os.path.join(xbmc.translatePath(this_addon.getAddonInfo('profile')), 'cache')
 mode_page = 1
 mode_genre = 2
 mode_show = 3
@@ -31,20 +29,31 @@ mode_play_live = 6
 recent_id = '42c22ec3-8501-46ca-8ab9-0450f1a37a1d'
 mode_recent = 7
 
-# cache key is the file {key}.dat
 # cache entries are tuples in the form of (ttl, value)
 def get_cache(key):
-    file_path = os.path.join(xbmc.translatePath(this_addon.getAddonInfo('profile')), '%s.dat' % key)
+    file_path = os.path.join(cache_dir, '%s.cache' % key)
     c_val = None
-    with open(file_path, 'rb') as f:
-        c_val = pickle.load(f)
+    try:
+        with open(file_path, 'rb') as f:
+            c_val = pickle.load(f)
+    except:
+        return None
     if c_val and c_val[0] - time.time() > 0:
         return c_val[1]
 
 def set_cache(key, val, ttl):
-    file_path = os.path.join(xbmc.translatePath(this_addon.getAddonInfo('profile')), '%s.dat' % key)
+    file_path = os.path.join(cache_dir, '%s.cache' % key)
     with open(file_path, 'wb') as f:
         pickle.dump((time.time() + ttl, val), f)
+
+def init_cache():
+    old_files = ['init', 'header', 'sso', 'headers', 'genres.tv', 'genres.movies', 'genres.music']
+    for o in old_files:
+        fname = os.path.join(xbmc.translatePath(this_addon.getAddonInfo('profile')), '%s.dat' % o)
+        if os.path.exists(fname):
+            os.remove(fname)
+    if not os.path.exists(cache_dir):
+        os.makedirs(cache_dir)
 
 def cached(key, ttl = 10000):
     def cached_decorator(f):
@@ -115,9 +124,7 @@ def add_dir(name, id, mode, is_folder = True, **kwargs):
     return xbmcplugin.addDirectoryItem(handle = this_plugin, url = url, listitem = liz, isFolder = is_folder)
 
 def initialize():
-    set_cache('init', {}, -1)
-    set_cache('headers', [], -1)
-    set_cache('sso', {}, -1)
+    init_cache()
 
 @cached('init')
 def get_init():
@@ -128,6 +135,13 @@ def get_init():
 def get_headers():
     header_url = build_url('/getHeader')
     return get_json_response(header_url)
+
+def get_genres_by_type(pageCode, contentType):
+    @cached('genres.%s.%s' % (pageCode, contentType))
+    def get_genres_by_code(pageCode, contentType):
+        header_url = build_url('/getGenres', params = {'pageCode': pageCode, 'contentType': contentType})
+        return get_json_response(header_url)
+    return get_genres_by_code(pageCode, contentType)
 
 def get_recents():
     headers = get_headers()
@@ -145,7 +159,6 @@ def get_recents():
     for r in recents:
         add_dir(r['recentTitle'], r['recentId'], mode_play_live if r['recentContentType'] == 'live' else mode_play, is_folder = False, list_properties = {'isPlayable': 'true'})
     xbmcplugin.endOfDirectory(this_plugin)
-    
 
 def get_pages():
     headers = get_headers()
@@ -156,11 +169,33 @@ def get_pages():
 
 def get_genres():
     headers = get_headers()
+    # get the chunk from the headers list that matches this pageCode/id,
+    # e.g. if we are in the 'Tv' page, get the relevant subMenu, etc. for this page
     header = list(filter(lambda x: x['id'] == id, headers))
     sub_menu_id = header[0]['subMenu'][0]['submenuId']
-    genres = header[0]['subMenu'][0]['subGenre']
+    # sub_menu_id = header[0]['subMenu'][0]['submenuId']
+    sub_menu_name = header[0]['name']
+    genres = None
+    # combine genres for tv and originals because some genres don't show up and it seems that both may share the same genres
+    if sub_menu_name.lower() in ['tv', 'originals']:
+        genres = [
+            {'genreID': g['genreId'], 'genreName': g['genreName']} 
+            for h in headers 
+            for s in h['subMenu'] 
+            for g in s['subGenre']
+        ]
+        genres.extend(get_genres_by_type(id, 'tv'))
+        genres.extend(get_genres_by_type(id, 'movies'))
+    else:
+        genres = header[0]['subMenu'][0]['subGenre']
+        moreGenres = get_genres_by_type(id, sub_menu_name.lower())
+        if moreGenres and moreGenres != 'null':
+            genres.extend(moreGenres)
+    # make the list unique by genreId
+    genres = {g['genreId'] if 'genreId' in g else g['genreID']: g for g in genres}.values()
+    genres = sorted(genres, key = lambda g: g['genreName'])
     for g in genres:
-        itemId = json.dumps({'pageCode': id, 'submenuID': sub_menu_id, 'genreID': g['genreId']})
+        itemId = json.dumps({'pageCode': id, 'submenuID': sub_menu_id, 'genreID': g['genreId'] if 'genreId' in g else g['genreID']})
         add_dir(g['genreName'], itemId, mode_show)
     xbmcplugin.endOfDirectory(this_plugin)
 
