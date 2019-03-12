@@ -176,10 +176,10 @@ def get_genres():
     header = list(filter(lambda x: x['id'] == id, headers))
     sub_menu_id = header[0]['subMenu'][0]['submenuId']
     # sub_menu_id = header[0]['subMenu'][0]['submenuId']
-    sub_menu_name = header[0]['name']
+    sub_menu_name = header[0]['name'].lower()
     genres = None
     # combine genres for tv and originals because some genres don't show up and it seems that both may share the same genres
-    if sub_menu_name.lower() in ['tv', 'originals']:
+    if sub_menu_name in ['tv', 'originals']:
         genres = [
             {'genreID': g['genreId'], 'genreName': g['genreName']} 
             for h in headers 
@@ -190,13 +190,14 @@ def get_genres():
         genres.extend(get_genres_by_type(id, 'movies'))
     else:
         genres = header[0]['subMenu'][0]['subGenre']
-        moreGenres = get_genres_by_type(id, sub_menu_name.lower())
+        moreGenres = get_genres_by_type(id, sub_menu_name)
         if moreGenres and moreGenres != 'null':
             genres.extend(moreGenres)
     # make the list unique by genreId
     genres = {g['genreId'] if 'genreId' in g else g['genreID']: g for g in genres}.values()
     genres = sorted(genres, key = lambda g: g['genreName'])
     for g in genres:
+        # set the page that we're at (tv, originals, movies, etc.) so we can tell if we're in movies because movies don't have episodes
         extra = {'pageCode': id, 'submenuID': sub_menu_id}
         genreId = g['genreId'] if 'genreId' in g else g['genreID']
         add_dir(g['genreName'], genreId, mode_show, extra = extra)
@@ -210,8 +211,25 @@ def get_shows():
     url = build_url('/getList', params = params)
     data = get_json_response(url)
     if data:
+        mode_lookup = {
+            'movies': mode_play,
+            'live': mode_play
+        }
+        is_folder_lookup = {
+            'movies': False,
+            'live': False
+        }
+        liz_prop_lk = {
+            'movies': {'isPlayable': 'true'},
+            'live': {'isPlayable': 'true'}
+        }
         for d in data:
-            add_dir(d['textHead'], d['ID'], mode_episode, art = {'thumb': d['thumbnail'].encode('utf8')})
+            content_type = d['contentType']
+            dir_mode = mode_lookup[content_type] if content_type in mode_lookup else mode_episode
+            is_folder = is_folder_lookup[content_type] if content_type in is_folder_lookup else True
+            list_properties = liz_prop_lk[content_type] if content_type in liz_prop_lk else {}
+            fanart = d['thumbnail'].encode('utf8')
+            add_dir(d['textHead'], d['ID'], dir_mode, is_folder = is_folder, art = {'thumb': fanart, 'fanart': fanart}, extra = {'contentType': d['contentType']}, list_properties = list_properties)
         add_dir('Next >>', id, mode_show, page = page + 1)
     xbmcplugin.endOfDirectory(this_plugin)
 
@@ -226,18 +244,38 @@ def get_episodes():
         add_dir('Next >>', id, mode_episode, page = page + 1)
     xbmcplugin.endOfDirectory(this_plugin)
 
-def get_show_player():
-    url = build_url('/getShowPlayer', params = {'access_token': get_access_token(), 'episodeID': id})
+def get_player(contentType):
+    params = {'access_token': get_access_token()}
+    path_lk = {
+        'movies': '/getMoviePlayer',
+        'live': '/getLivePlayer'
+    }
+    param_key_lk = {
+        'movies': 'movieID',
+        'live': 'channelID'
+    }
+    path = path_lk[contentType] if contentType in path_lk else '/getShowPlayer'
+    paramKey = param_key_lk[contentType] if contentType in param_key_lk else 'episodeID'
+    params[paramKey] = id
+    url = build_url(path, params = params)
     return get_json_response(url)
 
 
 def play_episode():
+    content_type = extra['contentType'] if 'contentType' in extra else None
     x_forwarded_for = this_addon.getSetting('xForwardedForIp')
-    show_player = get_show_player()
-    video_url = show_player['episodeVideo'] or show_player['mpegDash'] or show_player['hls'] or show_player['smoothStreaming'] or show_player['stbVideo'] or show_player['videoHDS']
+    show_player = get_player(content_type)
+    default_url_lk = {
+        'movies': 'movieVideo',
+        'live': 'liveVideo'
+    }
+    video_key = default_url_lk[content_type] if content_type in default_url_lk else 'episodeVideo'
+    default_url = show_player[video_key]
+    video_url = default_url or show_player['hls'] or show_player['mpegDash'] or show_player['stbVideo'] or show_player['smoothStreaming'] or show_player['videoHDS']
     video_url = '{video_url}|X-Forwarded-For={x_forwarded_for}&User-Agent={user_agent}'.format(video_url = video_url, x_forwarded_for = x_forwarded_for, user_agent = user_agent)
     liz = xbmcgui.ListItem(name)
-    liz.setInfo(type="Video", infoLabels={"Title": name})
+    liz.setInfo(type="Video", infoLabels={"Title": name, 'plot': show_player['episodeDesc']})
+    liz.setArt({'thumb': show_player['episodeImageThumbnail']})
     liz.setPath(video_url)
     if mode == mode_play_live:
         xbmc.Player().play(item = video_url, listitem = liz)
@@ -318,5 +356,5 @@ elif mode == mode_show:
     get_shows()
 elif mode == mode_episode:
     get_episodes()
-elif mode == mode_play:
+elif mode == mode_play or mode == mode_play_live:
     play_episode()
