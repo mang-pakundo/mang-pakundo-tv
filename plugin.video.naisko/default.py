@@ -120,6 +120,8 @@ def add_dir(name, id, mode, is_folder = True, **kwargs):
         url = '{url}&{art_params}'.format(url = url, art_params = urllib.urlencode(art))
     if 'page' in kwargs:
         url = '{url}&page={page}'.format(url = url, page = kwargs['page'])
+    if 'extra' in kwargs:
+        url = '{url}&extra={extra}'.format(url = url, extra = json.dumps(kwargs['extra']))
     liz.setInfo(type = "Video", infoLabels = info_labels)
     return xbmcplugin.addDirectoryItem(handle = this_plugin, url = url, listitem = liz, isFolder = is_folder)
 
@@ -195,13 +197,14 @@ def get_genres():
     genres = {g['genreId'] if 'genreId' in g else g['genreID']: g for g in genres}.values()
     genres = sorted(genres, key = lambda g: g['genreName'])
     for g in genres:
-        itemId = json.dumps({'pageCode': id, 'submenuID': sub_menu_id, 'genreID': g['genreId'] if 'genreId' in g else g['genreID']})
-        add_dir(g['genreName'], itemId, mode_show)
+        extra = {'pageCode': id, 'submenuID': sub_menu_id}
+        genreId = g['genreId'] if 'genreId' in g else g['genreID']
+        add_dir(g['genreName'], genreId, mode_show, extra = extra)
     xbmcplugin.endOfDirectory(this_plugin)
 
 def get_shows():
-    itemId = json.loads(id)
-    params = itemId.copy()
+    params = extra.copy()
+    params['genreID'] = id
     params['sorting'] = 'desc'
     params['offset'] = page
     url = build_url('/getList', params = params)
@@ -301,6 +304,7 @@ name = try_get_param(params, 'name')
 mode = int(try_get_param(params, 'mode', mode))
 thumb = try_get_param(params, 'thumb', '')
 page = int(try_get_param(params, 'page', 0))
+extra = json.loads(try_get_param(params, 'extra', '{}'))
 id = try_get_param(params, 'id')
 
 if mode == mode_page or not id or len(id) == 0:
