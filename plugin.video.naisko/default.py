@@ -248,15 +248,17 @@ def get_player(contentType):
     params = {'access_token': get_access_token()}
     path_lk = {
         'movies': '/getMoviePlayer',
-        'live': '/getLivePlayer'
+        'live': '/getLivePlayer',
+        'default': '/getShowPlayer'
     }
     param_key_lk = {
         'movies': 'movieID',
-        'live': 'channelID'
+        'live': 'channelID',
+        'default': 'episodeID'
     }
-    path = path_lk[contentType] if contentType in path_lk else '/getShowPlayer'
-    paramKey = param_key_lk[contentType] if contentType in param_key_lk else 'episodeID'
-    params[paramKey] = id
+    path = path_lk[contentType] if contentType in path_lk else path_lk['default']
+    param_key = param_key_lk[contentType] if contentType in param_key_lk else param_key_lk['default']
+    params[param_key] = id
     url = build_url(path, params = params)
     return get_json_response(url)
 
@@ -265,17 +267,20 @@ def play_episode():
     content_type = extra['contentType'] if 'contentType' in extra else None
     x_forwarded_for = this_addon.getSetting('xForwardedForIp')
     show_player = get_player(content_type)
-    default_url_lk = {
-        'movies': 'movieVideo',
-        'live': 'liveVideo'
+    video_key_name_lk = {
+        'movies': 'stbVideo',
+        'live': 'liveVideo',
+        'default': 'episodeVideo'
     }
-    video_key = default_url_lk[content_type] if content_type in default_url_lk else 'episodeVideo'
+    video_key = video_key_name_lk[content_type] if content_type in video_key_name_lk else video_key_name_lk['default']
     default_url = show_player[video_key]
     video_url = default_url or show_player['hls'] or show_player['mpegDash'] or show_player['stbVideo'] or show_player['smoothStreaming'] or show_player['videoHDS']
-    video_url = '{video_url}|X-Forwarded-For={x_forwarded_for}&User-Agent={user_agent}'.format(video_url = video_url, x_forwarded_for = x_forwarded_for, user_agent = user_agent)
+    video_url = '{video_url}|X-Forwarded-For={x_forwarded_for}&User-Agent={user_agent}'.format(video_url = video_url, x_forwarded_for = x_forwarded_for, user_agent = 'Akamai AMP SDK Android (6.109; 6.0.1; hammerhead; armeabi-v7a)')
     liz = xbmcgui.ListItem(name)
-    liz.setInfo(type="Video", infoLabels={"Title": name, 'plot': show_player['episodeDesc']})
-    liz.setArt({'thumb': show_player['episodeImageThumbnail']})
+    plot = show_player['episodeDesc'] if 'episodeDesc' in show_player else ''
+    liz.setInfo(type="Video", infoLabels={"Title": name, 'plot': plot})
+    thumb = show_player['episodeImageThumbnail'] if 'episodeImageThumbnail' in show_player else None
+    liz.setArt({'thumb': thumb})
     liz.setPath(video_url)
     if mode == mode_play_live:
         xbmc.Player().play(item = video_url, listitem = liz)
