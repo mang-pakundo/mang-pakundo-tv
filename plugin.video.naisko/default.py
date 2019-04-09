@@ -247,7 +247,7 @@ def get_shows():
             list_properties = liz_prop_lk[content_type] if content_type in liz_prop_lk else {}
             fanart = d['thumbnail'].encode('utf8')
             add_dir(d['textHead'], d['ID'], dir_mode, is_folder = is_folder, art = {'thumb': fanart, 'fanart': fanart}, extra = {'contentType': d['contentType']}, list_properties = list_properties)
-        add_dir('Next >>', id, mode_show, page = page + 1)
+        add_dir('Next >>', id, mode_show, page = page + 1, extra = extra)
     xbmcplugin.endOfDirectory(this_plugin)
 
 def get_episodes():
