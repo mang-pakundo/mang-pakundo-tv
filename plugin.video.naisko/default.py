@@ -125,25 +125,36 @@ def add_dir(name, id, mode, is_folder = True, **kwargs):
     liz.setInfo(type = "Video", infoLabels = info_labels)
     return xbmcplugin.addDirectoryItem(handle = this_plugin, url = url, listitem = liz, isFolder = is_folder)
 
-def show_message(message, title = ''):
+def show_dialog(message, title = ''):
     if not message:
         return
     dialog = xbmcgui.Dialog()
     dialog.ok(title, message)
 
-def show_announcement():
+def show_messages():
     try:
+        # changelog message
+        chlog_msg = get_json_response('https://raw.githubusercontent.com/mang-pakundo/mang-pakundo-tv-releases/master/resources/messages/{id}/changelog_message.json'.format(id=this_addon.getAddonInfo('id')))
+        this_version = this_addon.getAddonInfo('version')
+        chlog_msg_ver = this_addon.getSetting('chlog_msg_ver')
+        if chlog_msg['version'] == this_version and chlog_msg_ver != this_version and chlog_msg['enabled']:
+            show_dialog(chlog_msg['message'], this_addon.getLocalizedString(80701))
+            this_addon.setSetting('chlog_msg_ver', chlog_msg['version'])
+            # return early so we don't show 2 messages
+            return
+
+        # annoucement message
         msg = get_json_response('https://raw.githubusercontent.com/mang-pakundo/mang-pakundo-tv-releases/master/resources/messages/{id}/message.json'.format(id=this_addon.getAddonInfo('id')))
         last_msg_id = this_addon.getSetting('message_id')
-        if last_msg_id != msg['id']:
-            show_message(msg['message'], this_addon.getLocalizedString(80701))
+        if last_msg_id != msg['id'] and msg['enabled']:
+            show_dialog(msg['message'], this_addon.getLocalizedString(80701))
             this_addon.setSetting('message_id', msg['id'])
     except:
         xbmc.log(traceback.format_exc(), level=xbmc.LOGWARNING)
 
 def initialize():
     init_cache()
-    show_announcement()
+    show_messages()
 
 @cached('init')
 def get_init():
