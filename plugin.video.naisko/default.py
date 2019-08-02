@@ -298,7 +298,7 @@ def play_episode():
     video_key_name_lk = {
         'movies': 'stbVideo',
         'live': 'liveVideo',
-        'default': 'episodeVideo'
+        'default': 'stbVideo'
     }
     video_key = video_key_name_lk[content_type] if content_type in video_key_name_lk else video_key_name_lk['default']
     default_url = show_player[video_key]
