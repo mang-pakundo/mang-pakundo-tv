@@ -19,7 +19,7 @@
     </addon>
     <addon id="plugin.video.naisko"
            name="naIsko"
-           version="0.0.9"
+           version="0.1.0"
            provider-name="mang.pakundo">
       <requires>
         <import addon="xbmc.python" version="2.1.0"/>

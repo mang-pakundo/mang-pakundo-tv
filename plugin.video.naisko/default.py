@@ -11,6 +11,8 @@ import xbmc
 import xbmcgui
 import xbmcplugin
 import xbmcaddon
+import uuid
+import datetime
 
 from functools import wraps
 from random import randint
@@ -28,6 +30,9 @@ mode_play = 5
 mode_play_live = 6
 recent_id = '42c22ec3-8501-46ca-8ab9-0450f1a37a1d'
 mode_recent = 7
+s_key = '7e0d7e863cbc4deebdcb5021bd54ce57'
+s_sec = '20dc4af2a8ff4d35b93a31f9dcdf1f06'
+s_url = 'https://sentry.io/api/1536692/store/'
 
 # cache entries are tuples in the form of (ttl, value)
 def get_cache(key):
@@ -91,8 +96,7 @@ def http_request(url, params = {}, headers = {}):
         resp = urllib2.urlopen(req)
     return resp.read()
     
-def get_json_response(url, params = {}):
-    headers = {}
+def get_json_response(url, params = {}, headers = {}):
     json_resp = None
     if params:
         headers['Content-Type'] = 'application/json'
@@ -151,6 +155,7 @@ def show_messages():
             this_addon.setSetting('message_id', msg['id'])
     except:
         xbmc.log(traceback.format_exc(), level=xbmc.LOGWARNING)
+        raise
 
 def initialize():
     init_cache()
@@ -334,6 +339,7 @@ def do_sso_login():
         return access_data
     except:
         xbmc.log(traceback.format_exc())
+        raise
 
 def get_access_token():
     access_data = do_sso_login()
@@ -368,6 +374,50 @@ def auto_generate_ip():
     ip_address = '%s.%s.%s.%s' % (w, x, y, z)
     this_addon.setSetting('xForwardedForIp', ip_address)
 
+def send_to_sentry(extype, extb, mode):
+    headers = {
+        "X-Sentry-Auth": "Sentry sentry_version=5, sentry_client=goldfish/0.0.1, sentry_timestamp=%s, sentry_key=%s, sentry_secret=%s" % ( int(time.time()), s_key, s_sec)
+    }
+    data = {
+        "event_id": str(uuid.uuid4()),
+        "transaction": str(mode),
+        "timestamp": datetime.datetime.utcnow().isoformat(),
+        "tags": {
+            "version": this_addon.getAddonInfo('version')
+        },
+        "exception": {
+            "values": [{
+                "type": extype,
+                "value": extb
+            }]
+        }
+    }
+    get_json_response(s_url, data, headers)
+
+def main(mode, id):
+    try:
+        if mode == mode_page or not id or len(id) == 0:
+            initialize()
+            get_pages()
+        elif mode == mode_recent:
+            get_recents()
+        elif mode == mode_genre:
+            get_genres()
+        elif mode == mode_show:
+            get_shows()
+        elif mode == mode_episode:
+            get_episodes()
+        elif mode == mode_play or mode == mode_play_live:
+            play_episode()
+            1/0
+    except Exception as ex:
+        extype = type(ex).__name__
+        extb = traceback.format_exc(),
+        send_to_sentry(extype, extb, mode)
+        xbmc.log(extb)
+        name = this_addon.getAddonInfo('name')
+        icon = this_addon.getAddonInfo('icon')
+        xbmc.executebuiltin('Notification(%s Error, Check the logs for details, %d, %s)' % (name, 500, icon))
 
 mode = mode_page
 params = urlparse.parse_qs(sys.argv[2].replace('?',''))
@@ -378,16 +428,4 @@ page = int(try_get_param(params, 'page', 0))
 extra = json.loads(try_get_param(params, 'extra', '{}'))
 id = try_get_param(params, 'id')
 
-if mode == mode_page or not id or len(id) == 0:
-    initialize()
-    get_pages()
-elif mode == mode_recent:
-    get_recents()
-elif mode == mode_genre:
-    get_genres()
-elif mode == mode_show:
-    get_shows()
-elif mode == mode_episode:
-    get_episodes()
-elif mode == mode_play or mode == mode_play_live:
-    play_episode()
+main(mode, id)
