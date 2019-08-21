@@ -34,6 +34,33 @@ s_key = '7e0d7e863cbc4deebdcb5021bd54ce57'
 s_sec = '20dc4af2a8ff4d35b93a31f9dcdf1f06'
 s_url = 'https://sentry.io/api/1536692/store/'
 
+
+
+def send_to_sentry(data):
+    headers = {
+        "X-Sentry-Auth": "Sentry sentry_version=5, sentry_client=goldfish/0.0.1, sentry_timestamp=%s, sentry_key=%s, sentry_secret=%s" % ( int(time.time()), s_key, s_sec)
+    }
+    get_json_response(s_url, data, headers)
+
+
+def get_sentry_data(mode, ex_type, ex_val="", level="error", tags={}, extra={}):
+    return {
+        "event_id": str(uuid.uuid4()),
+        "level": level,
+        "platform": "python",
+        "release": this_addon.getAddonInfo('version'),
+        "transaction": str(mode),
+        "timestamp": datetime.datetime.utcnow().isoformat(),
+        "tags": tags,
+        "extra": extra,
+        "exception": {
+            "values": [{
+                "type": ex_type,
+                "value": ex_val
+            }]
+        }
+    }
+
 # cache entries are tuples in the form of (ttl, value)
 def get_cache(key):
     file_path = os.path.join(cache_dir, '%s.cache' % key)
@@ -300,6 +327,9 @@ def play_episode():
     content_type = extra['contentType'] if 'contentType' in extra else None
     x_forwarded_for = this_addon.getSetting('xForwardedForIp')
     show_player = get_player(content_type)
+    v_keys = list([k for k in show_player.keys() if show_player[k]])
+    sentry_data = get_sentry_data(mode, "v_keys", level="info", extra={"v_keys": v_keys})
+    send_to_sentry(sentry_data)
     video_key_name_lk = {
         'movies': 'stbVideo',
         'live': 'liveVideo',
@@ -374,25 +404,6 @@ def auto_generate_ip():
     ip_address = '%s.%s.%s.%s' % (w, x, y, z)
     this_addon.setSetting('xForwardedForIp', ip_address)
 
-def send_to_sentry(extype, extb, mode):
-    headers = {
-        "X-Sentry-Auth": "Sentry sentry_version=5, sentry_client=goldfish/0.0.1, sentry_timestamp=%s, sentry_key=%s, sentry_secret=%s" % ( int(time.time()), s_key, s_sec)
-    }
-    data = {
-        "event_id": str(uuid.uuid4()),
-        "transaction": str(mode),
-        "timestamp": datetime.datetime.utcnow().isoformat(),
-        "tags": {
-            "version": this_addon.getAddonInfo('version')
-        },
-        "exception": {
-            "values": [{
-                "type": extype,
-                "value": extb
-            }]
-        }
-    }
-    get_json_response(s_url, data, headers)
 
 def main(mode, id):
     try:
@@ -410,10 +421,11 @@ def main(mode, id):
         elif mode == mode_play or mode == mode_play_live:
             play_episode()
     except Exception as ex:
-        extype = type(ex).__name__
-        extb = traceback.format_exc(),
-        send_to_sentry(extype, extb, mode)
-        xbmc.log(extb)
+        ex_type = type(ex).__name__
+        ex_tb = traceback.format_exc()
+        sentry_data = get_sentry_data(mode, ex_type, ex_tb)
+        send_to_sentry(sentry_data)
+        xbmc.log(ex_tb)
         name = this_addon.getAddonInfo('name')
         icon = this_addon.getAddonInfo('icon')
         xbmc.executebuiltin('Notification(%s Error, Check the logs for details, %d, %s)' % (name, 500, icon))
