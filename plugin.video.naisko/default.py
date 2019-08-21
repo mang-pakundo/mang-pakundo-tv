@@ -409,7 +409,6 @@ def main(mode, id):
             get_episodes()
         elif mode == mode_play or mode == mode_play_live:
             play_episode()
-            1/0
     except Exception as ex:
         extype = type(ex).__name__
         extb = traceback.format_exc(),
