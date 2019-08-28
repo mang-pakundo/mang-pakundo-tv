@@ -1,13 +1,18 @@
 #!/bin/bash
 
-# source .env
+source .env
+VER=$2
+PLUGIN=${1%/}
 if [ -z "$RELEASE_DIR" ]; then
     echo "Release dir not found."
     exit 1
 fi
 
-VER=$2
-PLUGIN=${1%/}
+if [ -z "$VER" ] || [ -z "$PLUGIN" ]; then
+    echo "Usage: mkrelease.sh <PLUGIN> <VERSION>"
+    exit 1
+fi
+
 REPLACE_TPL="<addon id=\"$PLUGIN\" name=\"naIsko\" version=\"__VER__\" provider-name=\"mang.pakundo\">"
 FIND_STR=$(echo $REPLACE_TPL | sed 's/__VER__/[0-9]+\\.[0-9]+\\.[0-9]+/')
 REPLACE_STR=$(echo $REPLACE_TPL | sed "s/__VER__/$VER/")
