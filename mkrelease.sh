@@ -19,10 +19,14 @@ REPLACE_STR=$(echo $REPLACE_TPL | sed "s/__VER__/$VER/")
 
 echo "$RELEASE_DIR/$PLUGIN/$PLUGIN-$VER.zip"
 
-sed -i -E "s/$FIND_STR/$REPLACE_STR/" addons.xml
-sed -i -E "s/$FIND_STR/$REPLACE_STR/" $PLUGIN/addon.xml
+sed -i .bak -E "s/$FIND_STR/$REPLACE_STR/" addons.xml
+sed -i .bak -E "s/$FIND_STR/$REPLACE_STR/" $PLUGIN/addon.xml
 md5sum addons.xml > addons.xml.md5
+
+rm addons.xml.bak
+rm "$PLUGIN/addon.xml.bak"
 zip -r "$RELEASE_DIR/$PLUGIN/$PLUGIN-$VER.zip" "$PLUGIN"
+
 
 echo "Go ahead and commit and push the release artifact"
 echo "Then commit and push the version bump"
