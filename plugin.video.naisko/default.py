@@ -13,6 +13,7 @@ import xbmcplugin
 import xbmcaddon
 import uuid
 import datetime
+import base64
 
 from functools import wraps
 from random import randint
@@ -30,6 +31,8 @@ mode_play = 5
 mode_play_live = 6
 recent_id = '42c22ec3-8501-46ca-8ab9-0450f1a37a1d'
 mode_recent = 7
+mode_music = 8
+mode_play_music = 9
 s_key = '7e0d7e863cbc4deebdcb5021bd54ce57'
 s_sec = '20dc4af2a8ff4d35b93a31f9dcdf1f06'
 s_url = 'https://sentry.io/api/1536692/store/'
@@ -152,7 +155,8 @@ def add_dir(name, id, mode, is_folder = True, **kwargs):
     if 'page' in kwargs:
         url = '{url}&page={page}'.format(url = url, page = kwargs['page'])
     if 'extra' in kwargs:
-        url = '{url}&extra={extra}'.format(url = url, extra = json.dumps(kwargs['extra']))
+        extra =  base64.urlsafe_b64encode(json.dumps(kwargs['extra']))
+        url = '{url}&extra={extra}'.format(url = url, extra = extra)
     liz.setInfo(type = "Video", infoLabels = info_labels)
     return xbmcplugin.addDirectoryItem(handle = this_plugin, url = url, listitem = liz, isFolder = is_folder)
 
@@ -224,7 +228,7 @@ def get_recents():
 
 def get_pages():
     headers = get_headers()
-    add_dir('Latest', recent_id, mode_recent)
+    # add_dir('Latest', recent_id, mode_recent)
     for h in headers:
         add_dir(h['name'].title(), h['id'], mode_genre)
     xbmcplugin.endOfDirectory(this_plugin)
@@ -237,22 +241,10 @@ def get_genres():
     sub_menu_id = header[0]['subMenu'][0]['submenuId']
     # sub_menu_id = header[0]['subMenu'][0]['submenuId']
     sub_menu_name = header[0]['name'].lower()
-    genres = None
-    # combine genres for tv and originals because some genres don't show up and it seems that both may share the same genres
-    if sub_menu_name in ['tv', 'originals']:
-        genres = [
-            {'genreID': g['genreId'], 'genreName': g['genreName']} 
-            for h in headers 
-            for s in h['subMenu'] 
-            for g in s['subGenre']
-        ]
-        genres.extend(get_genres_by_type(id, 'tv'))
-        genres.extend(get_genres_by_type(id, 'movies'))
-    else:
-        genres = header[0]['subMenu'][0]['subGenre']
-        moreGenres = get_genres_by_type(id, sub_menu_name)
-        if moreGenres and moreGenres != 'null':
-            genres.extend(moreGenres)
+    genres = header[0]['subMenu'][0]['subGenre']
+    moreGenres = get_genres_by_type(id, sub_menu_name)
+    if moreGenres and moreGenres != 'null':
+        genres.extend(moreGenres)
     # make the list unique by genreId
     genres = {g['genreId'] if 'genreId' in g else g['genreID']: g for g in genres}.values()
     genres = sorted(genres, key = lambda g: g['genreName'])
@@ -273,7 +265,8 @@ def get_shows():
     if data:
         mode_lookup = {
             'movies': mode_play,
-            'live': mode_play
+            'live': mode_play,
+            'music': mode_music
         }
         is_folder_lookup = {
             'movies': False,
@@ -304,6 +297,31 @@ def get_episodes():
         add_dir('Next >>', id, mode_episode, page = page + 1)
     xbmcplugin.endOfDirectory(this_plugin)
 
+def get_album_info():
+    params = {'albumID': id, 'access_token': get_access_token()}
+    url = build_url('/getAlbumInfo', params = params)
+    data = get_json_response(url)
+    if data:
+        thumb = data['albumImageThumbnail'].encode('utf8')
+        fanart = data['albumImageLarge'].encode('utf8')
+        for d in data['albumSongs']:
+            art = {'thumb': thumb, 'fanart': fanart}
+            extra = {'url': d['songAsset'], 'thumb': thumb, 'fanart': fanart}
+            add_dir(d['songName'], d['songID'], mode_play_music, is_folder = False, art = art, list_properties = {'isPlayable': 'true'}, extra=extra)
+    xbmcplugin.endOfDirectory(this_plugin)
+
+def add_url_headers(url):
+    x_forwarded_for = this_addon.getSetting('xForwardedForIp')
+    return '{url}|X-Forwarded-For={x_forwarded_for}&User-Agent={user_agent}'.format(url = url, x_forwarded_for = x_forwarded_for, user_agent = 'Akamai AMP SDK Android (6.109; 6.0.1; hammerhead; armeabi-v7a)')
+
+def play_music():
+    url = add_url_headers(extra['url'])
+    liz = xbmcgui.ListItem(name)
+    liz.setInfo(type="music", infoLabels={"Title": name})
+    liz.setArt({'thumb': extra['thumb'], 'fanart': extra['fanart']})
+    liz.setPath(url)
+    return xbmcplugin.setResolvedUrl(this_plugin, True, liz)
+
 def get_player(contentType):
     params = {'access_token': get_access_token()}
     path_lk = {
@@ -323,28 +341,89 @@ def get_player(contentType):
     return get_json_response(url)
 
 
+def get_video_url_and_key(play_info, content_type):
+    default_video_keys = ['stbVideo', 'hls', 'mpegDash', 'videoHDS', 'movieVideo', 'smoothStreaming']
+    video_keys = {
+        'movies': ['stbVideo', 'mpegDash'],
+        'live': ['liveVideo']
+    }
+    key_lookup_order = video_keys[content_type] if content_type in video_keys else ['stbVideo', 'hls', 'mpegDash', 'videoHDS', 'movieVideo', 'smoothStreaming']
+
+    # lookup video url based on the order specified in key_lookup_order + default_video_keys
+    # and determine the video key that found the video
+    key_used = None
+    video_url = None
+    for k in key_lookup_order:
+        if k not in play_info:
+            continue
+        video_url = play_info[k]
+        if video_url:
+            key_used = k
+            break
+    if not video_url:
+        for k in default_video_keys:
+            if k not in play_info:
+                continue
+            video_url = play_info[k]
+            if video_url:
+                key_used = k
+                break
+
+    return {'key': key_used, 'url': video_url}
+
+
+def create_listitem(name, item_type, path, **kwargs):
+    liz = xbmcgui.ListItem(name)
+    liz.setPath(path)
+    
+    info_labels = {'Title': name}
+    if 'info_labels' in kwargs:
+        info_labels = info_labels.update(kwargs['info_labels'])
+    liz.setInfo(type=item_type, infoLabels=info_labels)
+
+    if 'art' in kwargs:
+        liz.setArt(kwargs['art'])
+
+    if 'properties' in kwargs:
+        liz.setProperties(kwargs['properties'])
+
+    if 'content_lookup' in kwargs:
+        liz.setContentLookup(kwargs['content_lookup'])
+
+    return liz
+    
+
 def play_episode():
     content_type = extra['contentType'] if 'contentType' in extra else None
-    x_forwarded_for = this_addon.getSetting('xForwardedForIp')
     show_player = get_player(content_type)
     v_keys = list([k for k in show_player.keys() if show_player[k]])
     sentry_data = get_sentry_data(mode, "v_keys", level="info", extra={"v_keys": v_keys})
     send_to_sentry(sentry_data)
-    video_key_name_lk = {
-        'movies': 'stbVideo',
-        'live': 'liveVideo',
-        'default': 'stbVideo'
+    video_info = get_video_url_and_key(show_player, content_type)
+    video_url = add_url_headers(video_info['url'])
+    video_key = video_info['key']
+
+    info_labels = {
+        'plot': show_player['episodeDesc'] if 'episodeDesc' in show_player else ''
+        }
+    art = {
+        'thumb': show_player['episodeImageThumbnail'] if 'episodeImageThumbnail' in show_player else None
     }
-    video_key = video_key_name_lk[content_type] if content_type in video_key_name_lk else video_key_name_lk['default']
-    default_url = show_player[video_key]
-    video_url = default_url or show_player['hls'] or show_player['mpegDash'] or show_player['stbVideo'] or show_player['smoothStreaming'] or show_player['videoHDS']
-    video_url = '{video_url}|X-Forwarded-For={x_forwarded_for}&User-Agent={user_agent}'.format(video_url = video_url, x_forwarded_for = x_forwarded_for, user_agent = 'Akamai AMP SDK Android (6.109; 6.0.1; hammerhead; armeabi-v7a)')
-    liz = xbmcgui.ListItem(name)
-    plot = show_player['episodeDesc'] if 'episodeDesc' in show_player else ''
-    liz.setInfo(type="Video", infoLabels={"Title": name, 'plot': plot})
-    thumb = show_player['episodeImageThumbnail'] if 'episodeImageThumbnail' in show_player else None
-    liz.setArt({'thumb': thumb})
-    liz.setPath(video_url)
+    liz_properties = {}
+    content_lookup = True
+    if video_key == 'mpegDash':
+        liz_properties['inputstreamaddon'] = 'inputstream.adaptive'
+        liz_properties['inputstream.adaptive.manifest_type'] = 'mpd'
+        license_tpl = '%s|%s|%s|%s' % (show_player['widevine'],
+            'X-Forwarded-For=' + this_addon.getSetting('xForwardedForIp'),
+            'R{SSM}',
+            '')
+        liz_properties['inputstream.adaptive.license_key'] = license_tpl
+        liz_properties['inputstream.adaptive.license_type'] = 'com.widevine.alpha'
+        liz_properties['inputstream.adaptive.stream_headers'] =  'X-Forwarded-For=%s' % this_addon.getSetting('xForwardedForIp')
+        content_lookup = False
+
+    liz = create_listitem(name, 'Video', video_url, info_labels=info_labels, properties=liz_properties, art=art)
     if mode == mode_play_live:
         xbmc.Player().play(item = video_url, listitem = liz)
     else:
@@ -420,12 +499,16 @@ def main(mode, id):
             get_episodes()
         elif mode == mode_play or mode == mode_play_live:
             play_episode()
+        elif mode == mode_music:
+            get_album_info()
+        elif mode == mode_play_music:
+            play_music()
     except Exception as ex:
         ex_type = type(ex).__name__
         ex_tb = traceback.format_exc()
         sentry_data = get_sentry_data(mode, ex_type, ex_tb)
         send_to_sentry(sentry_data)
-        xbmc.log(ex_tb)
+        xbmc.log(ex_tb, level=xbmc.LOGERROR)
         name = this_addon.getAddonInfo('name')
         icon = this_addon.getAddonInfo('icon')
         xbmc.executebuiltin('Notification(%s Error, Check the logs for details, %d, %s)' % (name, 500, icon))
@@ -436,7 +519,10 @@ name = try_get_param(params, 'name')
 mode = int(try_get_param(params, 'mode', mode))
 thumb = try_get_param(params, 'thumb', '')
 page = int(try_get_param(params, 'page', 0))
-extra = json.loads(try_get_param(params, 'extra', '{}'))
+raw_extra = try_get_param(params, 'extra', '')
+extra = {}
+if raw_extra:
+    extra = json.loads(base64.urlsafe_b64decode(raw_extra))
 id = try_get_param(params, 'id')
 
 main(mode, id)
