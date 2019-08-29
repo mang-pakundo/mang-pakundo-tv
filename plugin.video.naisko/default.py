@@ -47,6 +47,7 @@ def send_to_sentry(data):
 
 
 def get_sentry_data(mode, ex_type, ex_val="", level="error", tags={}, extra={}):
+    tags['kodi_version'] = xbmc.getInfoLabel('System.BuildVersion')
     return {
         "event_id": str(uuid.uuid4()),
         "level": level,
@@ -385,7 +386,8 @@ def create_listitem(name, item_type, path, **kwargs):
         liz.setArt(kwargs['art'])
 
     if 'properties' in kwargs:
-        liz.setProperties(kwargs['properties'])
+        for k, v in kwargs['properties'].iteritems():
+            liz.setProperty(k, v)
 
     if 'content_lookup' in kwargs:
         liz.setContentLookup(kwargs['content_lookup'])
