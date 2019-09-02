@@ -8,5 +8,7 @@
     <string id="80501">Any Philippine IP (Set to "0.0.0.0" to auto-generate)</string>
     <string id="80701">Message</string>
     <string id="86000">Login Failed</string>
+    <string id="80800">Beta Features</string>
+    <string id="80801">Enable Beta Features</string>
 </strings>
 

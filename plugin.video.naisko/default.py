@@ -48,6 +48,7 @@ def send_to_sentry(data):
 
 def get_sentry_data(mode, ex_type, ex_val="", level="error", tags={}, extra={}):
     tags['kodi_version'] = xbmc.getInfoLabel('System.BuildVersion')
+    tags['enableBeta'] = this_addon.getSetting('enableBeta') 
     return {
         "event_id": str(uuid.uuid4()),
         "level": level,
@@ -398,12 +399,14 @@ def create_listitem(name, item_type, path, **kwargs):
 def play_episode():
     content_type = extra['contentType'] if 'contentType' in extra else None
     show_player = get_player(content_type)
-    v_keys = list([k for k in show_player.keys() if show_player[k]])
-    sentry_data = get_sentry_data(mode, "v_keys", level="info", extra={"v_keys": v_keys})
-    send_to_sentry(sentry_data)
     video_info = get_video_url_and_key(show_player, content_type)
     video_url = add_url_headers(video_info['url'])
     video_key = video_info['key']
+
+    a_keys = {k: True if v else False for k, v in show_player.iteritems()}
+    sentry_extra = {'content_type': content_type, "a_keys": a_keys, 'video_key': video_key}
+    sentry_data = get_sentry_data(mode, "a_keys", level="info", extra=sentry_extra)
+    send_to_sentry(sentry_data)
 
     info_labels = {
         'plot': show_player['episodeDesc'] if 'episodeDesc' in show_player else ''
@@ -424,6 +427,11 @@ def play_episode():
         liz_properties['inputstream.adaptive.license_type'] = 'com.widevine.alpha'
         liz_properties['inputstream.adaptive.stream_headers'] =  'X-Forwarded-For=%s' % this_addon.getSetting('xForwardedForIp')
         content_lookup = False
+
+    if this_addon.getSetting('enableBeta') and video_key == 'liveVideo':
+        liz_properties['inputstreamaddon'] = 'inputstream.adaptive'
+        liz_properties['inputstream.adaptive.manifest_type'] = 'hls'
+        liz_properties['inputstream.adaptive.stream_headers'] = 'X-Forwarded-For=%s&User-Agent=Akamai AMP SDK Android (6.109; 6.0.1; hammerhead; armeabi-v7a)' % this_addon.getSetting('xForwardedForIp')
 
     liz = create_listitem(name, 'Video', video_url, info_labels=info_labels, properties=liz_properties, art=art)
     if mode == mode_play_live:

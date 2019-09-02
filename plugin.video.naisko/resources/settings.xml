@@ -3,6 +3,7 @@
     <category label="80100">
         <setting id="emailAddress" type="text" label="80201" default=""/>
         <setting label="80202" type="text" id="password" option="hidden" enable="!eq(-1,)" default=""/>
+        <setting label="80801" type="bool" id="enableBeta" default="false"/>
     </category>
     <category label="80500">
         <setting id="xForwardedForIp" type="ipaddress" label="80501" default=""/>
