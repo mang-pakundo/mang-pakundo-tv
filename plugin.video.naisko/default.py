@@ -17,6 +17,7 @@ import base64
 
 from functools import wraps
 from random import randint
+import xml.etree.ElementTree as ET
 
 user_agent = 'okhttp/3.11.0'
 base_url = 'https://bff-prod.iwant.ph/api/OneCms/cmsapi/OTT'
@@ -406,7 +407,6 @@ def get_license_url(show_player, video_url):
     if not lic_url:
         headers = {'X-Forwarded-For': this_addon.getSetting('xForwardedForIp'), 'User-Agent': player_user_agent}
         res = http_request(video_url, headers=headers)
-        import xml.etree.ElementTree as ET
         root = ET.fromstring(res)
         elem = root.find('.//ms:laurl', {'ms': 'urn:microsoft'})
         lic_url = elem.attrib['licenseUrl']
