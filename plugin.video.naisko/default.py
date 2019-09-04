@@ -36,8 +36,11 @@ mode_play_music = 9
 s_key = '7e0d7e863cbc4deebdcb5021bd54ce57'
 s_sec = '20dc4af2a8ff4d35b93a31f9dcdf1f06'
 s_url = 'https://sentry.io/api/1536692/store/'
+player_user_agent = 'Akamai AMP SDK Android (6.109; 6.0.1; hammerhead; armeabi-v7a)'
 
 
+def get_enable_beta():
+    return this_addon.getSetting('enableBeta').lower() == 'true'
 
 def send_to_sentry(data):
     headers = {
@@ -48,7 +51,7 @@ def send_to_sentry(data):
 
 def get_sentry_data(mode, ex_type, ex_val="", level="error", tags={}, extra={}):
     tags['kodi_version'] = xbmc.getInfoLabel('System.BuildVersion')
-    tags['enableBeta'] = this_addon.getSetting('enableBeta') 
+    tags['enableBeta'] = get_enable_beta()
     return {
         "event_id": str(uuid.uuid4()),
         "level": level,
@@ -312,12 +315,14 @@ def get_album_info():
             add_dir(d['songName'], d['songID'], mode_play_music, is_folder = False, art = art, list_properties = {'isPlayable': 'true'}, extra=extra)
     xbmcplugin.endOfDirectory(this_plugin)
 
-def add_url_headers(url):
+
+def get_url_headers():
     x_forwarded_for = this_addon.getSetting('xForwardedForIp')
-    return '{url}|X-Forwarded-For={x_forwarded_for}&User-Agent={user_agent}'.format(url = url, x_forwarded_for = x_forwarded_for, user_agent = 'Akamai AMP SDK Android (6.109; 6.0.1; hammerhead; armeabi-v7a)')
+    return 'X-Forwarded-For={x_forwarded_for}&User-Agent={user_agent}'.format(x_forwarded_for = x_forwarded_for, user_agent = player_user_agent)
+
 
 def play_music():
-    url = add_url_headers(extra['url'])
+    url = '%s|%s' % (extra['url'], get_url_headers())
     liz = xbmcgui.ListItem(name)
     liz.setInfo(type="music", infoLabels={"Title": name})
     liz.setArt({'thumb': extra['thumb'], 'fanart': extra['fanart']})
@@ -344,12 +349,12 @@ def get_player(contentType):
 
 
 def get_video_url_and_key(play_info, content_type):
-    default_video_keys = ['stbVideo', 'hls', 'mpegDash', 'videoHDS', 'movieVideo', 'smoothStreaming']
+    default_video_keys = ['stbVideo', 'mpegDash', 'hls', 'videoHDS', 'movieVideo', 'smoothStreaming', 'episodeVideo', 'liveVideo']
     video_keys = {
         'movies': ['stbVideo', 'mpegDash'],
         'live': ['liveVideo']
     }
-    key_lookup_order = video_keys[content_type] if content_type in video_keys else ['stbVideo', 'hls', 'mpegDash', 'videoHDS', 'movieVideo', 'smoothStreaming']
+    key_lookup_order = video_keys[content_type] if content_type in video_keys else default_video_keys
 
     # lookup video url based on the order specified in key_lookup_order + default_video_keys
     # and determine the video key that found the video
@@ -396,11 +401,23 @@ def create_listitem(name, item_type, path, **kwargs):
     return liz
     
 
+def get_license_url(show_player, video_url):
+    lic_url = show_player['widevine'] if 'widevine' in show_player and 'kid' in show_player['widevine'].lower() else ''
+    if not lic_url:
+        headers = {'X-Forwarded-For': this_addon.getSetting('xForwardedForIp'), 'User-Agent': player_user_agent}
+        res = http_request(video_url, headers=headers)
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(res)
+        elem = root.find('.//ms:laurl', {'ms': 'urn:microsoft'})
+        lic_url = elem.attrib['licenseUrl']
+    return lic_url
+
+
 def play_episode():
     content_type = extra['contentType'] if 'contentType' in extra else None
     show_player = get_player(content_type)
     video_info = get_video_url_and_key(show_player, content_type)
-    video_url = add_url_headers(video_info['url'])
+    video_url = video_info['url']
     video_key = video_info['key']
 
     a_keys = {k: True if v else False for k, v in show_player.iteritems()}
@@ -415,25 +432,22 @@ def play_episode():
         'thumb': show_player['episodeImageThumbnail'] if 'episodeImageThumbnail' in show_player else None
     }
     liz_properties = {}
-    content_lookup = True
     if video_key == 'mpegDash':
         liz_properties['inputstreamaddon'] = 'inputstream.adaptive'
         liz_properties['inputstream.adaptive.manifest_type'] = 'mpd'
-        license_tpl = '%s|%s|%s|%s' % (show_player['widevine'],
-            'X-Forwarded-For=' + this_addon.getSetting('xForwardedForIp'),
-            'R{SSM}',
-            '')
+        lic_url = get_license_url(show_player, video_url)
+        license_tpl = '%s|%s|%s|%s' % (lic_url, get_url_headers(), 'R{SSM}', '')
         liz_properties['inputstream.adaptive.license_key'] = license_tpl
         liz_properties['inputstream.adaptive.license_type'] = 'com.widevine.alpha'
-        liz_properties['inputstream.adaptive.stream_headers'] =  'X-Forwarded-For=%s' % this_addon.getSetting('xForwardedForIp')
-        content_lookup = False
+        liz_properties['inputstream.adaptive.stream_headers'] = get_url_headers()
 
-    if this_addon.getSetting('enableBeta') and video_key == 'liveVideo':
+    if get_enable_beta() and video_key == 'liveVideo':
         liz_properties['inputstreamaddon'] = 'inputstream.adaptive'
         liz_properties['inputstream.adaptive.manifest_type'] = 'hls'
-        liz_properties['inputstream.adaptive.stream_headers'] = 'X-Forwarded-For=%s&User-Agent=Akamai AMP SDK Android (6.109; 6.0.1; hammerhead; armeabi-v7a)' % this_addon.getSetting('xForwardedForIp')
+        liz_properties['inputstream.adaptive.stream_headers'] = get_url_headers()
 
-    liz = create_listitem(name, 'Video', video_url, info_labels=info_labels, properties=liz_properties, art=art)
+    liz_video_url = '%s|%s' % (video_url, get_url_headers())
+    liz = create_listitem(name, 'Video', liz_video_url, info_labels=info_labels, properties=liz_properties, art=art)
     if mode == mode_play_live:
         xbmc.Player().play(item = video_url, listitem = liz)
     else:
