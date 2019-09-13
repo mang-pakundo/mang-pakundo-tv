@@ -50,9 +50,14 @@ def send_to_sentry(data):
     get_json_response(s_url, data, headers)
 
 
-def get_sentry_data(mode, ex_type, ex_val="", level="error", tags={}, extra={}):
-    tags['kodi_version'] = xbmc.getInfoLabel('System.BuildVersion')
-    tags['enableBeta'] = get_enable_beta()
+def get_sentry_data(mode, level, tags={}, extra={}):
+    tags['kodi_os_version_info'] = xbmc.getInfoLabel('System.OSVersionInfo')
+    tags['kodi_friendly_name'] = xbmc.getInfoLabel('System.FriendlyName')
+    tags['kodi_build_version'] = xbmc.getInfoLabel('System.BuildVersion')
+    tags['kodi_build_date'] = xbmc.getInfoLabel('System.BuildDate')
+    tags['kodi_video_encoder_info'] = xbmc.getInfoLabel('System.VideoEncoderInfo')
+    tags['enable_beta'] = get_enable_beta()
+
     return {
         "event_id": str(uuid.uuid4()),
         "level": level,
@@ -61,14 +66,22 @@ def get_sentry_data(mode, ex_type, ex_val="", level="error", tags={}, extra={}):
         "transaction": str(mode),
         "timestamp": datetime.datetime.utcnow().isoformat(),
         "tags": tags,
-        "extra": extra,
-        "exception": {
-            "values": [{
-                "type": ex_type,
-                "value": ex_val
-            }]
-        }
+        "extra": extra
     }
+
+
+
+def get_sentry_data_exception(mode, exceptions, level="error", tags={}, extra={}):
+    sentry_data = get_sentry_data(mode, level, tags, extra)
+    sentry_data['exception'] = {
+        "values": [exceptions]
+    }
+    return sentry_data
+
+def get_sentry_data_message(mode, message, level="info", tags={}, extra={}):
+    sentry_data = get_sentry_data(mode, level, tags, extra)
+    sentry_data['message'] = message
+    return sentry_data
 
 # cache entries are tuples in the form of (ttl, value)
 def get_cache(key):
@@ -422,7 +435,7 @@ def play_episode():
 
     a_keys = {k: True if v else False for k, v in show_player.iteritems()}
     sentry_extra = {'content_type': content_type, "a_keys": a_keys, 'video_key': video_key}
-    sentry_data = get_sentry_data(mode, "a_keys", level="info", extra=sentry_extra)
+    sentry_data = get_sentry_data_message(mode, {"message": 'a_keys'}, extra=sentry_extra)
     send_to_sentry(sentry_data)
 
     info_labels = {
@@ -530,7 +543,7 @@ def main(mode, id):
     except Exception as ex:
         ex_type = type(ex).__name__
         ex_tb = traceback.format_exc()
-        sentry_data = get_sentry_data(mode, ex_type, ex_tb)
+        sentry_data = get_sentry_data_exception(mode, {'type': ex_type, 'value': ex_tb})
         send_to_sentry(sentry_data)
         xbmc.log(ex_tb, level=xbmc.LOGERROR)
         name = this_addon.getAddonInfo('name')
