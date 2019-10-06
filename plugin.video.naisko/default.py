@@ -45,9 +45,9 @@ def get_enable_beta():
 
 def send_to_sentry(data):
     headers = {
-        "X-Sentry-Auth": "Sentry sentry_version=5, sentry_client=goldfish/0.0.1, sentry_timestamp=%s, sentry_key=%s, sentry_secret=%s" % ( int(time.time()), s_key, s_sec)
+        "X-Sentry-Auth": "Sentry sentry_version=5, sentry_client=goldfish/0.0.1, sentry_timestamp=%s, sentry_key=%s, sentry_secret=%s" % (int(time.time()), s_key, s_sec)
     }
-    get_json_response(s_url, data, headers)
+    get_json_response(s_url, data, headers, False)
 
 
 def get_sentry_data(mode, level, tags={}, extra={}):
@@ -130,12 +130,11 @@ def build_url(path, base_url = base_url, params = {}):
         url = '{url}?{params}'.format(url = url, params = urllib.urlencode(params))
     return url
     
-def http_request(url, params = {}, headers = {}):
+def http_request(url, params = {}, headers = {}, send_default_headers=True):
     req = urllib2.Request(url)
-    if not is_x_forwarded_for_ip_valid():
-        auto_generate_ip()
-    req.add_header('X-Forwarded-For', this_addon.getSetting('xForwardedForIp'))
-    req.add_header('User-Agent', user_agent)
+    if send_default_headers:
+        req.add_header('X-Forwarded-For', get_xff_ip())
+        req.add_header('User-Agent', user_agent)
     for k, v in headers.iteritems():
         req.add_header(k, v)
     resp = None
@@ -145,14 +144,14 @@ def http_request(url, params = {}, headers = {}):
         resp = urllib2.urlopen(req)
     return resp.read()
     
-def get_json_response(url, params = {}, headers = {}):
+def get_json_response(url, params = {}, headers = {}, send_default_headers=True):
     json_resp = None
     if params:
         headers['Content-Type'] = 'application/json'
         json_params = json.dumps(params)
-        json_resp = http_request(url, json_params, headers)
+        json_resp = http_request(url, json_params, headers, send_default_headers)
     else:
-        json_resp = http_request(url)
+        json_resp = http_request(url, send_default_headers=send_default_headers)
     return json.loads(json_resp)
 
 def add_dir(name, id, mode, is_folder = True, **kwargs):
@@ -331,8 +330,7 @@ def get_album_info():
 
 
 def get_url_headers():
-    x_forwarded_for = this_addon.getSetting('xForwardedForIp')
-    return 'X-Forwarded-For={x_forwarded_for}&User-Agent={user_agent}'.format(x_forwarded_for = x_forwarded_for, user_agent = player_user_agent)
+    return 'X-Forwarded-For={x_forwarded_for}&User-Agent={user_agent}'.format(x_forwarded_for = get_xff_ip(), user_agent = player_user_agent)
 
 
 def play_music():
@@ -418,8 +416,8 @@ def create_listitem(name, item_type, path, **kwargs):
 def get_license_url(show_player, video_url):
     lic_url = show_player['widevine'] if 'widevine' in show_player and 'kid' in show_player['widevine'].lower() else ''
     if not lic_url:
-        headers = {'X-Forwarded-For': this_addon.getSetting('xForwardedForIp'), 'User-Agent': player_user_agent}
-        res = http_request(video_url, headers=headers)
+        headers = {'User-Agent': player_user_agent}
+        res = http_request(video_url, headers=headers, send_default_headers=True)
         root = ET.fromstring(res)
         elem = root.find('.//ms:laurl', {'ms': 'urn:microsoft'})
         lic_url = elem.attrib['licenseUrl']
@@ -449,14 +447,16 @@ def play_episode():
         liz_properties['inputstreamaddon'] = 'inputstream.adaptive'
         liz_properties['inputstream.adaptive.manifest_type'] = 'mpd'
         lic_url = get_license_url(show_player, video_url)
-        license_tpl = '%s|%s|%s|%s' % (lic_url, get_url_headers(), 'R{SSM}', '')
+        lic_headers = get_url_headers() + '&content-type=application/octet-stream'
+        license_tpl = '%s|%s|%s|%s' % (lic_url, lic_headers , 'R{SSM}', '')
         liz_properties['inputstream.adaptive.license_key'] = license_tpl
         liz_properties['inputstream.adaptive.license_type'] = 'com.widevine.alpha'
         liz_properties['inputstream.adaptive.stream_headers'] = get_url_headers()
 
-    if get_enable_beta() and video_key == 'liveVideo':
+    if video_key == 'liveVideo':
         liz_properties['inputstreamaddon'] = 'inputstream.adaptive'
         liz_properties['inputstream.adaptive.manifest_type'] = 'hls'
+        liz_properties['inputstream.adaptive.license_key'] = '|%s|||' % get_url_headers()
         liz_properties['inputstream.adaptive.stream_headers'] = get_url_headers()
 
     liz_video_url = '%s|%s' % (video_url, get_url_headers())
@@ -519,6 +519,11 @@ def auto_generate_ip():
     if z == 255: z = 254
     ip_address = '%s.%s.%s.%s' % (w, x, y, z)
     this_addon.setSetting('xForwardedForIp', ip_address)
+
+def get_xff_ip():
+    if not is_x_forwarded_for_ip_valid():
+        auto_generate_ip()
+    return this_addon.getSetting('xForwardedForIp')
 
 
 def main(mode, id):
