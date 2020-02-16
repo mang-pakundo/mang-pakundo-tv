@@ -8,4 +8,8 @@
     <category label="80500">
         <setting id="xForwardedForIp" type="ipaddress" label="80501" default=""/>
     </category>
+    <category label="80900">
+        <setting id="supportId" type="text" label="80901" default=""/>
+        <setting id="sendSupportId" type="bool" label="80902" default="false"/>
+    </category>
 </settings>

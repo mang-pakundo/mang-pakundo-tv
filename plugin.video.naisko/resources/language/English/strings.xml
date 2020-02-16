@@ -10,5 +10,8 @@
     <string id="86000">Login Failed</string>
     <string id="80800">Beta Features</string>
     <string id="80801">Enable Beta Features</string>
+    <string id="80900">Support</string>
+    <string id="80901">Support ID (Set to empty to autogenerate)</string>
+    <string id="80902">Send to support (Enable only if instructed by support)</string>
 </strings>
 

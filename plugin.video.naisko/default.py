@@ -43,11 +43,25 @@ player_user_agent = 'Akamai AMP SDK Android (6.109; 6.0.1; hammerhead; armeabi-v
 def get_enable_beta():
     return this_addon.getSetting('enableBeta').lower() == 'true'
 
+def get_send_support_id():
+    return this_addon.getSetting('sendSupportId').lower() == 'true'
+
+def get_support_id():
+    try:
+        uuid.UUID(this_addon.getSetting('supportId'))
+    except ValueError:
+        this_addon.setSetting('supportId', str(uuid.uuid4()))
+    return this_addon.getSetting('supportId')
+
 def send_to_sentry(data):
     headers = {
         "X-Sentry-Auth": "Sentry sentry_version=5, sentry_client=goldfish/0.0.1, sentry_timestamp=%s, sentry_key=%s, sentry_secret=%s" % (int(time.time()), s_key, s_sec)
     }
-    get_json_response(s_url, data, headers, False)
+    try:
+        get_json_response(s_url, data, headers, False)
+    except:
+        ex_tb = traceback.format_exc()
+        xbmc.log(ex_tb, level=xbmc.LOGERROR)
 
 
 def get_sentry_data(mode, level, tags={}, extra={}):
@@ -57,6 +71,8 @@ def get_sentry_data(mode, level, tags={}, extra={}):
     tags['kodi_build_date'] = xbmc.getInfoLabel('System.BuildDate')
     tags['kodi_video_encoder_info'] = xbmc.getInfoLabel('System.VideoEncoderInfo')
     tags['enable_beta'] = get_enable_beta()
+    if get_send_support_id():
+        tags['support_id'] = get_support_id()
 
     return {
         "event_id": str(uuid.uuid4()),
@@ -430,11 +446,6 @@ def play_episode():
     video_info = get_video_url_and_key(show_player, content_type)
     video_url = video_info['url']
     video_key = video_info['key']
-
-    a_keys = {k: True if v else False for k, v in show_player.iteritems()}
-    sentry_extra = {'content_type': content_type, "a_keys": a_keys, 'video_key': video_key}
-    sentry_data = get_sentry_data_message(mode, {"message": 'a_keys'}, extra=sentry_extra)
-    send_to_sentry(sentry_data)
 
     info_labels = {
         'plot': show_player['episodeDesc'] if 'episodeDesc' in show_player else ''
