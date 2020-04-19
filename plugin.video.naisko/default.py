@@ -14,6 +14,7 @@ import xbmcaddon
 import uuid
 import datetime
 import base64
+import hashlib
 
 from functools import wraps
 from random import randint
@@ -71,16 +72,21 @@ def get_sentry_data(mode, level, tags={}, extra={}):
     tags['kodi_build_date'] = xbmc.getInfoLabel('System.BuildDate')
     tags['kodi_video_encoder_info'] = xbmc.getInfoLabel('System.VideoEncoderInfo')
     tags['enable_beta'] = get_enable_beta()
+    tags['user_id'] = hashlib.sha1(this_addon.getSetting('emailAddress')).hexdigest()
     if get_send_support_id():
         tags['support_id'] = get_support_id()
 
     return {
         "event_id": str(uuid.uuid4()),
         "level": level,
+        "logger": __name__,
         "platform": "python",
         "release": this_addon.getAddonInfo('version'),
         "transaction": str(mode),
         "timestamp": datetime.datetime.utcnow().isoformat(),
+        "user": {
+            "ip_address": "{{auto}}"
+        },
         "tags": tags,
         "extra": extra
     }
@@ -223,6 +229,8 @@ def show_messages():
         raise
 
 def initialize():
+    sentry_data = get_sentry_data_message(mode, "Initialized")
+    send_to_sentry(sentry_data)
     init_cache()
     show_messages()
 
