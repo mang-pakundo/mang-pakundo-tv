@@ -1,20 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addons>
-    <addon id="plugin.video.iwantv" name="iWantv" version="1.0.5" provider-name="mang.pakundo">
-      <requires>
-        <import addon="xbmc.python" version="2.1.0"/>
-      </requires>
-      <extension point="xbmc.python.pluginsource"
-                library="default.py">
-            <provides>video</provides>
-      </extension>
-      <extension point="xbmc.addon.metadata">
-        <summary>iWantv</summary>
-        <description>An iWantv account is required.</description>
-        <platform>all</platform>
-      </extension>
-    </addon>
-    <addon id="plugin.video.naisko" name="naIsko" version="0.1.14" provider-name="mang.pakundo">
+    <addon id="plugin.video.naisko" name="naIsko" version="0.1.15" provider-name="mang.pakundo">
       <requires>
         <import addon="xbmc.python" version="2.1.0"/>
       </requires>
