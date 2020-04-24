@@ -67,7 +67,9 @@ def send_to_sentry(data):
 
 def get_sentry_data(mode, level, tags={}, extra={}):
     tags['kodi_os_version_info'] = xbmc.getInfoLabel('System.OSVersionInfo')
-    tags['kodi_friendly_name'] = xbmc.getInfoLabel('System.FriendlyName')
+    kodi_friendly_name = xbmc.getInfoLabel('System.FriendlyName')
+    tags['kodi_friendly_name'] = kodi_friendly_name
+    tags['kodi_friendly_name_encoded'] = base64.b64encode(kodi_friendly_name)
     tags['kodi_build_version'] = xbmc.getInfoLabel('System.BuildVersion')
     tags['kodi_build_date'] = xbmc.getInfoLabel('System.BuildDate')
     tags['kodi_video_encoder_info'] = xbmc.getInfoLabel('System.VideoEncoderInfo')
@@ -567,7 +569,11 @@ def main(mode, id):
     except Exception as ex:
         ex_type = type(ex).__name__
         ex_tb = traceback.format_exc()
-        sentry_data = get_sentry_data_exception(mode, {'type': ex_type, 'value': ex_tb})
+        extra_data = {
+            'params': params,
+            'decoded_extra': extra
+        }
+        sentry_data = get_sentry_data_exception(mode, {'type': ex_type, 'value': ex_tb}, extra=extra_data)
         send_to_sentry(sentry_data)
         xbmc.log(ex_tb, level=xbmc.LOGERROR)
         name = this_addon.getAddonInfo('name')
