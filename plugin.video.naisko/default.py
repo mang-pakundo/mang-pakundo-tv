@@ -15,6 +15,7 @@ import uuid
 import datetime
 import base64
 import hashlib
+import errno
 
 from functools import wraps
 from random import randint
@@ -121,15 +122,16 @@ def get_cache(key):
 
 def set_cache(key, val, ttl):
     file_path = os.path.join(cache_dir, '%s.cache' % key)
-    with open(file_path, 'wb') as f:
-        pickle.dump((time.time() + ttl, val), f)
+    try:
+        with open(file_path, 'wb') as f:
+            pickle.dump((time.time() + ttl, val), f)
+    except IOError as e:
+        if e.errno == errno.ENOENT:
+            init_cache()
+            with open(file_path, 'wb') as f:
+                pickle.dump((time.time() + ttl, val), f)
 
 def init_cache():
-    old_files = ['init', 'header', 'sso', 'headers', 'genres.tv', 'genres.movies', 'genres.music']
-    for o in old_files:
-        fname = os.path.join(xbmc.translatePath(this_addon.getAddonInfo('profile')), '%s.dat' % o)
-        if os.path.exists(fname):
-            os.remove(fname)
     if not os.path.exists(cache_dir):
         os.makedirs(cache_dir)
 
@@ -207,6 +209,11 @@ def show_dialog(message, title = ''):
         return
     dialog = xbmcgui.Dialog()
     dialog.ok(title, message)
+
+def show_notification(notification_type, message, display_ms):
+    name = this_addon.getAddonInfo('name')
+    icon = this_addon.getAddonInfo('icon')
+    xbmc.executebuiltin('Notification({name} {notification_type}, {message}, {display_ms}, {icon})'.format(name=name, notification_type=notification_type, message=message, display_ms=display_ms, icon=icon))
 
 def show_messages():
     try:
@@ -306,7 +313,7 @@ def get_shows():
     params['offset'] = page
     url = build_url('/getList', params = params)
     data = get_json_response(url)
-    if data:
+    if data and data != 'null':
         mode_lookup = {
             'movies': mode_play,
             'live': mode_play,
@@ -576,9 +583,7 @@ def main(mode, id):
         sentry_data = get_sentry_data_exception(mode, {'type': ex_type, 'value': ex_tb}, extra=extra_data)
         send_to_sentry(sentry_data)
         xbmc.log(ex_tb, level=xbmc.LOGERROR)
-        name = this_addon.getAddonInfo('name')
-        icon = this_addon.getAddonInfo('icon')
-        xbmc.executebuiltin('Notification(%s Error, Check the logs for details, %d, %s)' % (name, 500, icon))
+        show_notification('Error', 'Check the logs for details', 500)
 
 mode = mode_page
 params = urlparse.parse_qs(sys.argv[2].replace('?',''))
