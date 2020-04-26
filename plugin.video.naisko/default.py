@@ -583,7 +583,10 @@ def main(mode, id):
         sentry_data = get_sentry_data_exception(mode, {'type': ex_type, 'value': ex_tb}, extra=extra_data)
         send_to_sentry(sentry_data)
         xbmc.log(ex_tb, level=xbmc.LOGERROR)
-        show_notification('Error', 'Check the logs for details', 500)
+        if isinstance(ex, urllib2.URLError) or isinstance(ex, urllib2.HTTPError):
+            show_notification('Error', 'Network error. Please try again.', 500)
+        else:
+            show_notification('Error', 'Check the logs for details.', 500)
 
 mode = mode_page
 params = urlparse.parse_qs(sys.argv[2].replace('?',''))
