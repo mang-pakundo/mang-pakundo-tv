@@ -343,7 +343,9 @@ def get_episodes():
     data = get_json_response(url)
     if data:
         for d in data:
-            art = {'thumb': d['Thumbnail'].encode('utf8'), 'fanart': d['Large'].encode('utf8')}
+            fanart = d['Large'] and d['Large'].encode('utf8')
+            thumb_art = d['Thumbnail'] and d['Thumbnail'].encode('utf8')
+            art = {'thumb': thumb_art, 'fanart': fanart}
             add_dir(d['title'], d['id'], mode_play, is_folder = False, art = art, list_properties = {'isPlayable': 'true'})
         add_dir('Next >>', id, mode_episode, page = page + 1)
     xbmcplugin.endOfDirectory(this_plugin)
