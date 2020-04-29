@@ -16,6 +16,7 @@ import datetime
 import base64
 import hashlib
 import errno
+import StringIO
 
 from functools import wraps
 from random import randint
@@ -66,7 +67,7 @@ def send_to_sentry(data):
         xbmc.log(ex_tb, level=xbmc.LOGERROR)
 
 
-def get_sentry_data(mode, level, tags={}, extra={}):
+def get_sentry_data(level, tags={}, sentry_extra={}):
     tags['kodi_os_version_info'] = xbmc.getInfoLabel('System.OSVersionInfo')
     kodi_friendly_name = xbmc.getInfoLabel('System.FriendlyName')
     tags['kodi_friendly_name'] = kodi_friendly_name
@@ -74,10 +75,20 @@ def get_sentry_data(mode, level, tags={}, extra={}):
     tags['kodi_build_version'] = xbmc.getInfoLabel('System.BuildVersion')
     tags['kodi_build_date'] = xbmc.getInfoLabel('System.BuildDate')
     tags['kodi_video_encoder_info'] = xbmc.getInfoLabel('System.VideoEncoderInfo')
-    tags['enable_beta'] = get_enable_beta()
     tags['user_id'] = hashlib.sha1(this_addon.getSetting('emailAddress')).hexdigest()
     if get_send_support_id():
         tags['support_id'] = get_support_id()
+
+    sentry_extra['inputstream_adaptive_version'] = xbmc.getInfoLabel('System.AddonVersion(inputstream.adaptive)')
+    sentry_extra['inputstream_adaptive_enabled'] = xbmc.getCondVisibility('System.HasAddon(inputstream.adaptive)')
+    sentry_extra['enable_beta'] = get_enable_beta()
+    addon_extra = {}
+    if extra:
+        addon_extra['extra'] = extra
+    if params:
+        addon_extra['params'] = params
+    if addon_extra:
+        sentry_extra['addon_extra'] = addon_extra
 
     return {
         "event_id": str(uuid.uuid4()),
@@ -91,22 +102,31 @@ def get_sentry_data(mode, level, tags={}, extra={}):
             "ip_address": "{{auto}}"
         },
         "tags": tags,
-        "extra": extra
+        "extra": sentry_extra
     }
 
-
-
-def get_sentry_data_exception(mode, exceptions, level="error", tags={}, extra={}):
-    sentry_data = get_sentry_data(mode, level, tags, extra)
+def get_sentry_data_exception(exceptions, level="error", tags={}, sentry_extra={}):
+    sentry_data = get_sentry_data(level, tags, sentry_extra)
     sentry_data['exception'] = {
-        "values": [exceptions]
+        "values": [e for e in exceptions]
     }
     return sentry_data
 
-def get_sentry_data_message(mode, message, level="info", tags={}, extra={}):
-    sentry_data = get_sentry_data(mode, level, tags, extra)
+def get_sentry_data_message(message, level="info", tags={}, sentry_extra={}):
+    sentry_data = get_sentry_data(level, tags, sentry_extra)
     sentry_data['message'] = message
     return sentry_data
+
+def send_message_to_sentry(message, tags={}, sentry_extra={}):
+    data = get_sentry_data_message(message, tags=tags, sentry_extra=sentry_extra)
+    send_to_sentry(data)
+
+
+def send_exception_to_sentry(ex, tags={}, sentry_extra={}):
+    ex_type = type(ex).__name__
+    ex_tb = traceback.format_exc()
+    sentry_data = get_sentry_data_exception([{'type': ex_type, 'value': ex_tb}], tags=tags, sentry_extra=sentry_extra)
+    send_to_sentry(sentry_data)
 
 # cache entries are tuples in the form of (ttl, value)
 def get_cache(key):
@@ -169,6 +189,16 @@ def http_request(url, params = {}, headers = {}, send_default_headers=True):
     else:
         resp = urllib2.urlopen(req)
     return resp.read()
+
+def try_get_json(json_str):
+    json_res = json_str
+    success = False
+    try:
+        json_res = json.loads(json_str)
+        success = True
+    except:
+        pass
+    return json_res, success
     
 def get_json_response(url, params = {}, headers = {}, send_default_headers=True):
     json_resp = None
@@ -238,8 +268,7 @@ def show_messages():
         raise
 
 def initialize():
-    sentry_data = get_sentry_data_message(mode, "Initialized")
-    send_to_sentry(sentry_data)
+    send_message_to_sentry('Initialized')
     init_cache()
     show_messages()
 
@@ -472,6 +501,11 @@ def play_episode():
     art = {
         'thumb': show_player['episodeImageThumbnail'] if 'episodeImageThumbnail' in show_player else None
     }
+
+    if (video_key in ['mpegDash', 'liveVideo'] and not xbmc.getCondVisibility('System.HasAddon(inputstream.adaptive)')):
+        show_dialog('Please install and/or enable the InputStream Adaptive addon.', 'Missing Addon')
+        return
+
     liz_properties = {}
     if video_key == 'mpegDash':
         liz_properties['inputstreamaddon'] = 'inputstream.adaptive'
@@ -509,12 +543,11 @@ def do_sso_login():
         url = 'https://bff-prod.iwant.ph/api/sso/sso.login'
         access_data = get_json_response(url, params = params)
         if access_data['statusCode'] != 203200:
-            dialog = xbmcgui.Dialog()
-            dialog.ok('Login Failed', access_data['message'])
-            return None
+            invalid_login_ex = urllib2.HTTPError(url, 401, access_data['message'], {}, StringIO.StringIO(json.dumps(access_data)))
+            raise invalid_login_ex
         return access_data
-    except:
-        xbmc.log(traceback.format_exc())
+    except urllib2.HTTPError as ex:
+        show_dialog('The username and password combination is incorrect or there was a failure to authenticate the user.', 'Login Error')
         raise
 
 def get_access_token():
@@ -576,19 +609,19 @@ def main(mode, id):
         elif mode == mode_play_music:
             play_music()
     except Exception as ex:
-        ex_type = type(ex).__name__
-        ex_tb = traceback.format_exc()
-        extra_data = {
-            'params': params,
-            'decoded_extra': extra
-        }
-        sentry_data = get_sentry_data_exception(mode, {'type': ex_type, 'value': ex_tb}, extra=extra_data)
-        send_to_sentry(sentry_data)
-        xbmc.log(ex_tb, level=xbmc.LOGERROR)
-        if isinstance(ex, urllib2.URLError) or isinstance(ex, urllib2.HTTPError):
+        xbmc.log(traceback.format_exc(), level=xbmc.LOGERROR)
+        if isinstance(ex, urllib2.HTTPError):
+            response_body, success = try_get_json(ex.read())
+            response_body = response_body if success else {'response_body': response_body}
+            send_exception_to_sentry(ex, sentry_extra=response_body)
+            show_notification('Error', 'Network error. Please try again.', 500)
+            return
+        elif isinstance(ex, urllib2.URLError):
             show_notification('Error', 'Network error. Please try again.', 500)
         else:
             show_notification('Error', 'Check the logs for details.', 500)
+        send_exception_to_sentry(ex)
+        
 
 mode = mode_page
 params = urlparse.parse_qs(sys.argv[2].replace('?',''))
