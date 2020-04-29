@@ -82,6 +82,7 @@ def get_sentry_data(level, tags={}, sentry_extra={}):
     sentry_extra['inputstream_adaptive_version'] = xbmc.getInfoLabel('System.AddonVersion(inputstream.adaptive)')
     sentry_extra['inputstream_adaptive_enabled'] = xbmc.getCondVisibility('System.HasAddon(inputstream.adaptive)')
     sentry_extra['enable_beta'] = get_enable_beta()
+    sentry_extra['xff'] = get_xff_ip()
     addon_extra = {}
     if extra:
         addon_extra['extra'] = extra
