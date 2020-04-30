@@ -42,12 +42,17 @@ s_sec = '20dc4af2a8ff4d35b93a31f9dcdf1f06'
 s_url = 'https://sentry.io/api/1536692/store/'
 player_user_agent = 'Akamai AMP SDK Android (6.109; 6.0.1; hammerhead; armeabi-v7a)'
 
+def is_setting_true(setting_id):
+    return this_addon.getSetting(setting_id).lower() == 'true'
 
 def get_enable_beta():
-    return this_addon.getSetting('enableBeta').lower() == 'true'
+    return is_setting_true('enableBeta')
 
 def get_send_support_id():
-    return this_addon.getSetting('sendSupportId').lower() == 'true'
+    return is_setting_true('sendSupportId')
+
+def get_auto_fix_ip():
+    return is_setting_true('autoFixIp')
 
 def get_support_id():
     try:
@@ -208,7 +213,7 @@ def get_json_response(url, params = {}, headers = {}, send_default_headers=True)
         json_params = json.dumps(params)
         json_resp = http_request(url, json_params, headers, send_default_headers)
     else:
-        json_resp = http_request(url, send_default_headers=send_default_headers)
+        json_resp = http_request(url, headers=headers, send_default_headers=send_default_headers)
     return json.loads(json_resp)
 
 def add_dir(name, id, mode, is_folder = True, **kwargs):
@@ -488,6 +493,18 @@ def get_license_url(show_player, video_url):
         lic_url = elem.attrib['licenseUrl']
     return lic_url
 
+def autofix_forbidden(video_url):
+    try:
+        if not get_auto_fix_ip() or randint(0, 3) > 0:
+            return
+        headers = {'User-Agent': player_user_agent}
+        res = http_request(video_url, headers=headers, send_default_headers=True)
+    except urllib2.HTTPError as ex:
+        send_exception_to_sentry(ex)
+        if ex.code == 403:
+            auto_generate_ip()
+
+
 
 def play_episode():
     content_type = extra['contentType'] if 'contentType' in extra else None
@@ -495,6 +512,8 @@ def play_episode():
     video_info = get_video_url_and_key(show_player, content_type)
     video_url = video_info['url']
     video_key = video_info['key']
+
+    autofix_forbidden(video_url)
 
     info_labels = {
         'plot': show_player['episodeDesc'] if 'episodeDesc' in show_player else ''
@@ -564,7 +583,7 @@ def is_x_forwarded_for_ip_valid():
         return False
     return True
 
-def auto_generate_ip():
+def rand_ip_address():
     ip_range_list = [
         (1848401920, 1848406015),
         (1884172288, 1884176383),
@@ -582,7 +601,32 @@ def auto_generate_ip():
     if z == 0: z = 1
     if z == 255: z = 254
     ip_address = '%s.%s.%s.%s' % (w, x, y, z)
-    this_addon.setSetting('xForwardedForIp', ip_address)
+    return ip_address
+
+def auto_generate_ip():
+    discarded_ips = []
+    for i in range(0, 10):
+        try:
+            ip_to_test = rand_ip_address()
+            headers = {
+                'User-Agent': user_agent,
+                'X-Forwarded-For': ip_to_test,
+                'ocp-apim-subscription-key': '57fc3a3784784d389c5158f288f5489a',
+                'authority': 'api.iwant.ph',
+                'origin': 'https://www.iwant.ph'
+            }
+            resp = get_json_response('https://api.iwant.ph/location/v1/location/allowed', headers=headers, send_default_headers=False)
+            if resp['data']['isAllowed']:
+                this_addon.setSetting('xForwardedForIp', ip_to_test)
+                break
+            else:
+                discarded_ips.append(ip_to_test)
+        except Exception as ex:
+            discarded_ips.append(ip_to_test)
+            send_exception_to_sentry(ex, sentry_extra={'tested_ip': ip_to_test})
+    if discarded_ips:
+        send_message_to_sentry('AutoGenerateIp', sentry_extra={'discarded_ips': discarded_ips})
+
 
 def get_xff_ip():
     if not is_x_forwarded_for_ip_valid():

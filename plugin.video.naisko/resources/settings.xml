@@ -7,6 +7,7 @@
     </category>
     <category label="80500">
         <setting id="xForwardedForIp" type="ipaddress" label="80501" default=""/>
+        <setting id="autoFixIp" type="bool" label="80502" default="true"/>
     </category>
     <category label="80900">
         <setting id="supportId" type="text" label="80901" default=""/>
