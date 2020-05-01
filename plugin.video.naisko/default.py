@@ -625,8 +625,7 @@ def auto_generate_ip():
         except Exception as ex:
             discarded_ips.append(ip_to_test)
             send_exception_to_sentry(ex, sentry_extra={'tested_ip': ip_to_test})
-    if discarded_ips:
-        send_message_to_sentry('AutoGenerateIp', sentry_extra={'discarded_ips': discarded_ips})
+    send_message_to_sentry('AutoGenerateIp', sentry_extra={'discarded_ips': discarded_ips})
 
 
 def get_xff_ip():
