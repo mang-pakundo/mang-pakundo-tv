@@ -41,6 +41,7 @@ s_key = '7e0d7e863cbc4deebdcb5021bd54ce57'
 s_sec = '20dc4af2a8ff4d35b93a31f9dcdf1f06'
 s_url = 'https://sentry.io/api/1536692/store/'
 player_user_agent = 'Akamai AMP SDK Android (6.109; 6.0.1; hammerhead; armeabi-v7a)'
+browser_ua = 'Mozilla/5.0 (X11; CrOS x86_64 12871.67.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.94 Safari/537.36'
 
 def is_setting_true(setting_id):
     return this_addon.getSetting(setting_id).lower() == 'true'
@@ -254,7 +255,7 @@ def show_notification(notification_type, message, display_ms):
 def show_messages():
     try:
         # changelog message
-        chlog_msg = get_json_response('https://raw.githubusercontent.com/mang-pakundo/mang-pakundo-tv-releases/master/resources/messages/{id}/changelog_message.json'.format(id=this_addon.getAddonInfo('id')))
+        chlog_msg = get_json_response('https://bit.ly/2Wf3kdF', headers={'User-Agent': browser_ua}, send_default_headers=False)
         this_version = this_addon.getAddonInfo('version')
         chlog_msg_ver = this_addon.getSetting('chlog_msg_ver')
         if chlog_msg['version'] == this_version and chlog_msg_ver != this_version and chlog_msg['enabled']:
@@ -264,7 +265,7 @@ def show_messages():
             return
 
         # annoucement message
-        msg = get_json_response('https://raw.githubusercontent.com/mang-pakundo/mang-pakundo-tv-releases/master/resources/messages/{id}/message.json'.format(id=this_addon.getAddonInfo('id')))
+        msg = get_json_response('https://bit.ly/2W8vkj2', headers={'User-Agent': browser_ua}, send_default_headers=False)
         last_msg_id = this_addon.getSetting('message_id')
         if last_msg_id != msg['id'] and msg['enabled']:
             show_dialog(msg['message'], this_addon.getLocalizedString(80701))
