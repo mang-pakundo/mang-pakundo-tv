@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addons>
-    <addon id="plugin.video.naisko" name="naIsko" version="0.1.23" provider-name="mang.pakundo">
+    <addon id="plugin.video.naisko" name="naIsko" version="0.1.24" provider-name="mang.pakundo">
       <requires>
         <import addon="xbmc.python" version="2.1.0"/>
+        <import addon="inputstream.adaptive" version="2.0.0"/>
       </requires>
       <extension point="xbmc.python.pluginsource"
                 library="default.py">
