@@ -8,13 +8,13 @@ ARTIFACT_NAME := $(ADDON_NAME)-$(VERSION)
 
 export VERSION
 
-.PHONY:	build clean data init clean-version release
+.PHONY: build clean data init clean-version release
 
 data: init
 	@(source $(VENV_DIR)/bin/activate && python $(OPS_DIR)/mkdata.py $(OPS_DIR)/config.json $(BUILD_DIR)/data.py $(BUILD_DIR)/data.dat)
 	@mv $(BUILD_DIR)/data.py $(SRC_DIR)/lib/data.py
 
-build:	init data
+build: init data
 	@mkdir -p $(BUILD_DIR)/$(ADDON_NAME)/lib
 	@cp $(SRC_DIR)/addon.xml $(SRC_DIR)/default.py $(SRC_DIR)/icon.png $(BUILD_DIR)/$(ADDON_NAME)
 	@cp $(SRC_DIR)/lib/*.py $(BUILD_DIR)/$(ADDON_NAME)/lib
@@ -22,8 +22,8 @@ build:	init data
 	@zip -r $(BUILD_DIR)/$(ARTIFACT_NAME).zip $(BUILD_DIR)/$(ADDON_NAME)
 
 # this requires the .env file with the RELEASE_DIR defined
-release:	init build
-	@(source .env && cp $(BUILD_DIR)/$(ARTIFACT_NAME).zip "$$RELEASE_REPO/downloads/$(ADDON_NAME)" && cp ../addons.xml ../addons.xml.md5 "$$RELEASE_REPO")
+release: build
+	@(source .env && cp $(BUILD_DIR)/$(ARTIFACT_NAME).zip "$$RELEASE_REPO/downloads/$(ADDON_NAME)" && cp ../addons.xml ../addons.xml.md5 "$$RELEASE_REPO" && cp $(BUILD_DIR)/data.dat "$$RELEASE_REPO/resources/data/$(ADDON_NAME)")
 
 version: init
 ifndef BUMP
