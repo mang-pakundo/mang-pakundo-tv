@@ -16,14 +16,14 @@ import datetime
 import base64
 import hashlib
 import errno
-import StringIO
+import io
+import zlib
 
 from functools import wraps
 from random import randint
 import xml.etree.ElementTree as ET
+from lib.data import DATA1
 
-user_agent = 'okhttp/3.11.0'
-base_url = 'https://bff-prod.iwant.ph/api/OneCms/cmsapi/OTT'
 this_plugin = int(sys.argv[1])
 this_addon = xbmcaddon.Addon()
 cache_dir = os.path.join(xbmc.translatePath(this_addon.getAddonInfo('profile')), 'cache')
@@ -33,15 +33,11 @@ mode_show = 3
 mode_episode = 4
 mode_play = 5
 mode_play_live = 6
-recent_id = '42c22ec3-8501-46ca-8ab9-0450f1a37a1d'
 mode_recent = 7
 mode_music = 8
 mode_play_music = 9
-s_key = '7e0d7e863cbc4deebdcb5021bd54ce57'
-s_sec = '20dc4af2a8ff4d35b93a31f9dcdf1f06'
-s_url = 'https://sentry.io/api/1536692/store/'
-player_user_agent = 'Akamai AMP SDK Android (6.109; 6.0.1; hammerhead; armeabi-v7a)'
-browser_ua = 'Mozilla/5.0 (X11; CrOS x86_64 12871.67.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.94 Safari/537.36'
+
+CONFIG = {}
 
 def is_setting_true(setting_id):
     return this_addon.getSetting(setting_id).lower() == 'true'
@@ -64,10 +60,10 @@ def get_support_id():
 
 def send_to_sentry(data):
     headers = {
-        "X-Sentry-Auth": "Sentry sentry_version=5, sentry_client=goldfish/0.0.1, sentry_timestamp=%s, sentry_key=%s, sentry_secret=%s" % (int(time.time()), s_key, s_sec)
+        "X-Sentry-Auth": "Sentry sentry_version=5, sentry_client=goldfish/0.0.1, sentry_timestamp=%s, sentry_key=%s, sentry_secret=%s" % (int(time.time()), CONFIG['s_key'], CONFIG['s_sec'])
     }
     try:
-        get_json_response(s_url, data, headers, False)
+        get_json_response(CONFIG['s_url'], data, headers, False)
     except:
         ex_tb = traceback.format_exc()
         xbmc.log(ex_tb, level=xbmc.LOGERROR)
@@ -87,6 +83,8 @@ def get_sentry_data(level, tags={}, sentry_extra={}):
 
     sentry_extra['inputstream_adaptive_version'] = xbmc.getInfoLabel('System.AddonVersion(inputstream.adaptive)')
     sentry_extra['inputstream_adaptive_enabled'] = xbmc.getCondVisibility('System.HasAddon(inputstream.adaptive)')
+    sentry_extra['mang_pakundo_repo_version'] = xbmc.getInfoLabel('System.AddonVersion(repository.mang.pakundo.addons)')
+    sentry_extra['mang_pakundo_repo_enabled'] = xbmc.getCondVisibility('System.HasAddon(repository.mang.pakundo.addons)')
     sentry_extra['enable_beta'] = get_enable_beta()
     sentry_extra['xff'] = get_xff_ip()
     addon_extra = {}
@@ -177,17 +175,17 @@ def cached(key, ttl = 10000):
         return wrapper
     return cached_decorator
 
-def build_url(path, base_url = base_url, params = {}):
-    url = '{base_url}{path}'.format(base_url = base_url, path = path)
+def build_api_url(path, params={}):
+    url = '{base_url}/api/OneCms/cmsapi/OTT{path}'.format(base_url=CONFIG['base_url'], path=path)
     if params:
-        url = '{url}?{params}'.format(url = url, params = urllib.urlencode(params))
+        url = '{url}?{params}'.format(url=url, params=urllib.urlencode(params))
     return url
     
 def http_request(url, params = {}, headers = {}, send_default_headers=True):
     req = urllib2.Request(url)
     if send_default_headers:
         req.add_header('X-Forwarded-For', get_xff_ip())
-        req.add_header('User-Agent', user_agent)
+        req.add_header('User-Agent', CONFIG['app_ua'])
     for k, v in headers.iteritems():
         req.add_header(k, v)
     resp = None
@@ -216,6 +214,29 @@ def get_json_response(url, params = {}, headers = {}, send_default_headers=True)
     else:
         json_resp = http_request(url, headers=headers, send_default_headers=send_default_headers)
     return json.loads(json_resp)
+
+@cached('config')
+def get_config_file():
+    try:
+        config_raw = http_request('https://bit.ly/2Aa1QtO', headers={'User-Agent': CONFIG['browser_ua']}, send_default_headers=False)
+        config_file = zlib.decompress(config_raw, 32 + zlib.MAX_WBITS)
+        return json.loads(config_file)
+    except urllib2.HTTPError as ex:
+        xbmc.log(traceback.format_exc(), level=xbmc.LOGERROR)
+        response_body, success = try_get_json(ex.read())
+        response_body = response_body if success else {'response_body': response_body}
+        send_exception_to_sentry(ex, sentry_extra=response_body)
+    except Exception as ex:
+        xbmc.log(traceback.format_exc(), level=xbmc.LOGERROR)
+        send_exception_to_sentry(ex)
+
+def init_config():
+    global CONFIG
+    CONFIG = json.loads(base64.b64decode(DATA1))
+    config_file = get_config_file()
+    if config_file:
+        CONFIG = config_file
+
 
 def add_dir(name, id, mode, is_folder = True, **kwargs):
     query_string = {'id': id, 'mode': mode, 'name': name.encode('utf8')}
@@ -255,7 +276,7 @@ def show_notification(notification_type, message, display_ms):
 def show_messages():
     try:
         # changelog message
-        chlog_msg = get_json_response('https://bit.ly/2Wf3kdF', headers={'User-Agent': browser_ua}, send_default_headers=False)
+        chlog_msg = get_json_response(CONFIG['chlog_url'], headers={'User-Agent': CONFIG['browser_ua']}, send_default_headers=False)
         this_version = this_addon.getAddonInfo('version')
         chlog_msg_ver = this_addon.getSetting('chlog_msg_ver')
         if chlog_msg['version'] == this_version and chlog_msg_ver != this_version and chlog_msg['enabled']:
@@ -265,7 +286,7 @@ def show_messages():
             return
 
         # annoucement message
-        msg = get_json_response('https://bit.ly/2W8vkj2', headers={'User-Agent': browser_ua}, send_default_headers=False)
+        msg = get_json_response(CONFIG['ver_url'], headers={'User-Agent': CONFIG['browser_ua']}, send_default_headers=False)
         last_msg_id = this_addon.getSetting('message_id')
         if last_msg_id != msg['id'] and msg['enabled']:
             show_dialog(msg['message'], this_addon.getLocalizedString(80701))
@@ -281,18 +302,18 @@ def initialize():
 
 @cached('init')
 def get_init():
-    init_url = build_url('/getInit')
+    init_url = build_api_url('/getInit')
     return get_json_response(init_url)
 
 @cached('headers')
 def get_headers():
-    header_url = build_url('/getHeader')
+    header_url = build_api_url('/getHeader')
     return get_json_response(header_url)
 
 def get_genres_by_type(pageCode, contentType):
     @cached('genres.%s.%s' % (pageCode, contentType))
     def get_genres_by_code(pageCode, contentType):
-        header_url = build_url('/getGenres', params = {'pageCode': pageCode, 'contentType': contentType})
+        header_url = build_api_url('/getGenres', params = {'pageCode': pageCode, 'contentType': contentType})
         return get_json_response(header_url)
     return get_genres_by_code(pageCode, contentType)
 
@@ -315,7 +336,7 @@ def get_recents():
 
 def get_pages():
     headers = get_headers()
-    # add_dir('Latest', recent_id, mode_recent)
+    # add_dir('Latest', CONFIG['recent_id'], mode_recent)
     for h in headers:
         add_dir(h['name'].title(), h['id'], mode_genre)
     xbmcplugin.endOfDirectory(this_plugin)
@@ -347,7 +368,7 @@ def get_shows():
     params['genreID'] = id
     params['sorting'] = 'desc'
     params['offset'] = page
-    url = build_url('/getList', params = params)
+    url = build_api_url('/getList', params = params)
     data = get_json_response(url)
     if data and data != 'null':
         mode_lookup = {
@@ -375,7 +396,7 @@ def get_shows():
 
 def get_episodes():
     params = {'showID': id, 'offset': page, 'sorting': 'desc'}
-    url = build_url('/getEpisodes', params = params)
+    url = build_api_url('/getEpisodes', params = params)
     data = get_json_response(url)
     if data:
         for d in data:
@@ -388,7 +409,7 @@ def get_episodes():
 
 def get_album_info():
     params = {'albumID': id, 'access_token': get_access_token()}
-    url = build_url('/getAlbumInfo', params = params)
+    url = build_api_url('/getAlbumInfo', params = params)
     data = get_json_response(url)
     if data:
         thumb = data['albumImageThumbnail'].encode('utf8')
@@ -401,7 +422,7 @@ def get_album_info():
 
 
 def get_url_headers():
-    return 'X-Forwarded-For={x_forwarded_for}&User-Agent={user_agent}'.format(x_forwarded_for = get_xff_ip(), user_agent = player_user_agent)
+    return 'X-Forwarded-For={x_forwarded_for}&User-Agent={user_agent}'.format(x_forwarded_for = get_xff_ip(), user_agent = CONFIG['player_user_agent'])
 
 
 def play_music():
@@ -427,7 +448,7 @@ def get_player(contentType):
     path = path_lk[contentType] if contentType in path_lk else path_lk['default']
     param_key = param_key_lk[contentType] if contentType in param_key_lk else param_key_lk['default']
     params[param_key] = id
-    url = build_url(path, params = params)
+    url = build_api_url(path, params = params)
     return get_json_response(url)
 
 
@@ -487,7 +508,7 @@ def create_listitem(name, item_type, path, **kwargs):
 def get_license_url(show_player, video_url):
     lic_url = show_player['widevine'] if 'widevine' in show_player and 'kid' in show_player['widevine'].lower() else ''
     if not lic_url:
-        headers = {'User-Agent': player_user_agent}
+        headers = {'User-Agent': CONFIG['player_user_agent']}
         res = http_request(video_url, headers=headers, send_default_headers=True)
         root = ET.fromstring(res)
         elem = root.find('.//ms:laurl', {'ms': 'urn:microsoft'})
@@ -496,9 +517,9 @@ def get_license_url(show_player, video_url):
 
 def autofix_forbidden(video_url):
     try:
-        if not get_auto_fix_ip() or randint(0, 3) > 0:
+        if not get_auto_fix_ip() or randint(1, 100) >= CONFIG['ip_fix_pct']:
             return
-        headers = {'User-Agent': player_user_agent}
+        headers = {'User-Agent': CONFIG['player_user_agent']}
         res = http_request(video_url, headers=headers, send_default_headers=True)
     except urllib2.HTTPError as ex:
         send_exception_to_sentry(ex)
@@ -561,10 +582,10 @@ def do_sso_login():
             "sendVerificationEmail": True,
             "url": "https://www.iwant.ph/account-link?mobile_app=true"
         }
-        url = 'https://bff-prod.iwant.ph/api/sso/sso.login'
+        url = '{base_url}/api/sso/sso.login'.format(base_url=CONFIG['base_url'])
         access_data = get_json_response(url, params = params)
         if access_data['statusCode'] != 203200:
-            invalid_login_ex = urllib2.HTTPError(url, 401, access_data['message'], {}, StringIO.StringIO(json.dumps(access_data)))
+            invalid_login_ex = urllib2.HTTPError(url, 401, access_data['message'], {}, io.StringIO(json.dumps(access_data)))
             raise invalid_login_ex
         return access_data
     except urllib2.HTTPError as ex:
@@ -610,9 +631,9 @@ def auto_generate_ip():
         try:
             ip_to_test = rand_ip_address()
             headers = {
-                'User-Agent': user_agent,
+                'User-Agent': CONFIG['app_ua'],
                 'X-Forwarded-For': ip_to_test,
-                'ocp-apim-subscription-key': '57fc3a3784784d389c5158f288f5489a',
+                'ocp-apim-subscription-key': CONFIG['apim_k'],
                 'authority': 'api.iwant.ph',
                 'origin': 'https://www.iwant.ph'
             }
@@ -636,6 +657,7 @@ def get_xff_ip():
 
 def main(mode, id):
     try:
+        init_config()
         if mode == mode_page or not id or len(id) == 0:
             initialize()
             get_pages()
