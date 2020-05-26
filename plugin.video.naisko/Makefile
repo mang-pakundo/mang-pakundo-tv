@@ -19,7 +19,7 @@ build: init data
 	@cp $(SRC_DIR)/addon.xml $(SRC_DIR)/default.py $(SRC_DIR)/icon.png $(BUILD_DIR)/$(ADDON_NAME)
 	@cp $(SRC_DIR)/lib/*.py $(BUILD_DIR)/$(ADDON_NAME)/lib
 	@cp -R $(SRC_DIR)/resources $(BUILD_DIR)/$(ADDON_NAME)
-	@zip -r $(BUILD_DIR)/$(ARTIFACT_NAME).zip $(BUILD_DIR)/$(ADDON_NAME)
+	@cd $(BUILD_DIR) && zip -r $(ARTIFACT_NAME).zip $(ADDON_NAME)
 
 # this requires the .env file with the RELEASE_DIR defined
 release: build
