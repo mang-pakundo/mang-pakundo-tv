@@ -1,3 +1,7 @@
 *.py[co]
 tmp
 .env
+.vscode
+virtualenv
+.DS_Store
+build
