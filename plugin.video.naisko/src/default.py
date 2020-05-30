@@ -215,6 +215,13 @@ def get_json_response(url, params = {}, headers = {}, send_default_headers=True)
         json_resp = http_request(url, headers=headers, send_default_headers=send_default_headers)
     return json.loads(json_resp)
 
+# the api has a mix of old and new auth and endpoints. we need separate code paths for them
+# TODO clean this up once we get things straightened up
+def get_json_api_response(url, params = {}, headers = {}, send_default_headers=True, send_auth=True):
+    if send_auth:
+        headers['Authorization'] = 'Bearer {}'.format(get_auth_token())
+    return get_json_response(url, params, headers, send_default_headers)
+
 @cached('config')
 def get_config_file():
     try:
@@ -235,7 +242,8 @@ def init_config():
     CONFIG = json.loads(base64.b64decode(DATA1))
     config_file = get_config_file()
     if config_file:
-        CONFIG = config_file
+        for k, v in config_file.items():
+            CONFIG[k] = v
 
 
 def add_dir(name, id, mode, is_folder = True, **kwargs):
@@ -434,11 +442,10 @@ def play_music():
     return xbmcplugin.setResolvedUrl(this_plugin, True, liz)
 
 def get_player(contentType):
-    params = {'access_token': get_access_token()}
     path_lk = {
         'movies': '/getMoviePlayer',
         'live': '/getLivePlayer',
-        'default': '/getShowPlayer'
+        'default': 'tv'
     }
     param_key_lk = {
         'movies': 'movieID',
@@ -447,13 +454,22 @@ def get_player(contentType):
     }
     path = path_lk[contentType] if contentType in path_lk else path_lk['default']
     param_key = param_key_lk[contentType] if contentType in param_key_lk else param_key_lk['default']
-    params[param_key] = id
-    url = build_api_url(path, params = params)
-    return get_json_response(url)
+
+    player = {}
+    if path == 'tv':
+        url = '{base_url}/content/v1/player/{path}?siteCode=OTT&episodeID={id}&ipAddress={ip}&countryCode=PH'.format(base_url='https://api.iwant.ph', path=path, ip=http_request(CONFIG['wai_url'], send_default_headers=False), id=id)
+        headers = {'ocp-apim-subscription-key': CONFIG['p_apim_k']}
+        res =  get_json_api_response(url, headers=headers)
+        player = res['data']
+    else:
+        params = {'access_token': get_access_token(), param_key: id}
+        url = build_api_url(path, params=params)
+        player = get_json_response(url)
+    return player
 
 
 def get_video_url_and_key(play_info, content_type):
-    default_video_keys = ['stbVideo', 'mpegDash', 'hls', 'videoHDS', 'movieVideo', 'smoothStreaming', 'episodeVideo', 'liveVideo']
+    default_video_keys = ['stbVideo', 'stbVideo', 'mpegDash', 'hls', 'videoHDS', 'movieVideo', 'smoothStreaming', 'episodeVideo', 'liveVideo']
     video_keys = {
         'movies': ['stbVideo', 'mpegDash'],
         'live': ['liveVideo']
@@ -592,9 +608,34 @@ def do_sso_login():
         show_dialog('The username and password combination is incorrect or there was a failure to authenticate the user.', 'Login Error')
         raise
 
+@cached('login')
+def do_login():
+    try:
+        params = {
+            "loginID": this_addon.getSetting('emailAddress'),
+            "password": this_addon.getSetting('password'),
+            "keepMeLogin": True,
+            "sendVerificationEmail": True,
+            "siteURL": "https://www.iwant.ph"
+        }
+        url = '{base_url}/userprofile/v1/login/name-email'.format(base_url=CONFIG['api_base_url'])
+        headers = {'ocp-apim-subscription-key': CONFIG['l_apim_k']}
+        res = get_json_response(url, headers=headers, params=params)
+        if res['statusCode'] != 200:
+            invalid_login_ex = urllib2.HTTPError(url, 401, res['error']['message'], {}, io.StringIO(json.dumps(res)))
+            raise invalid_login_ex
+        return res
+    except urllib2.HTTPError as ex:
+        show_dialog('The username and password combination is incorrect or there was a failure to authenticate the user.', 'Login Error')
+        raise
+
 def get_access_token():
     access_data = do_sso_login()
     return access_data['data']['accessToken']['id']
+
+def get_auth_token():
+    res = do_login()
+    return res['data']['token']
 
 def try_get_param(params, name, default_value = None):
     return params[name][0] if name in params else default_value
