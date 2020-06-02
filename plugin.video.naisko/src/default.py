@@ -601,7 +601,7 @@ def do_sso_login():
         url = '{base_url}/api/sso/sso.login'.format(base_url=CONFIG['base_url'])
         access_data = get_json_response(url, params = params)
         if access_data['statusCode'] != 203200:
-            invalid_login_ex = urllib2.HTTPError(url, 401, access_data['message'], {}, io.StringIO(json.dumps(access_data)))
+            invalid_login_ex = urllib2.HTTPError(url, 401, access_data['message'], {}, io.BytesIO(json.dumps(access_data)))
             raise invalid_login_ex
         return access_data
     except urllib2.HTTPError as ex:
@@ -622,7 +622,7 @@ def do_login():
         headers = {'ocp-apim-subscription-key': CONFIG['l_apim_k']}
         res = get_json_response(url, headers=headers, params=params)
         if res['statusCode'] != 200:
-            invalid_login_ex = urllib2.HTTPError(url, 401, res['error']['message'], {}, io.StringIO(json.dumps(res)))
+            invalid_login_ex = urllib2.HTTPError(url, 401, res['error']['message'], {}, io.BytesIO(json.dumps(res)))
             raise invalid_login_ex
         return res
     except urllib2.HTTPError as ex:
