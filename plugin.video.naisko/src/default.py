@@ -458,8 +458,11 @@ def get_player(contentType):
     player = {}
     if path == 'tv':
         url = '{base_url}/content/v1/player/{path}?siteCode=OTT&episodeID={id}&ipAddress={ip}&countryCode=PH'.format(base_url='https://api.iwant.ph', path=path, ip=http_request(CONFIG['wai_url'], send_default_headers=False), id=id)
-        headers = {'ocp-apim-subscription-key': CONFIG['p_apim_k']}
-        res =  get_json_api_response(url, headers=headers)
+        headers = {
+            'ocp-apim-subscription-key': CONFIG['p_apim_k'],
+            'User-Agent': CONFIG['app_ua']
+            }
+        res =  get_json_api_response(url, headers=headers, send_default_headers=False)
         player = res['data']
     else:
         params = {'access_token': get_access_token(), param_key: id}
